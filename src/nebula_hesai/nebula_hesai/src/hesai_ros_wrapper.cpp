@@ -87,7 +87,9 @@ HesaiRosWrapper::HesaiRosWrapper(const rclcpp::NodeOptions & options)
 
   bool lidar_range_supported =
     sensor_cfg_ptr_->sensor_model != drivers::SensorModel::HESAI_PANDARAT128 &&
-    sensor_cfg_ptr_->sensor_model != drivers::SensorModel::HESAI_PANDAR64;
+    sensor_cfg_ptr_->sensor_model != drivers::SensorModel::HESAI_PANDAR64 &&
+    sensor_cfg_ptr_->sensor_model != drivers::SensorModel::HESAI_FTX140 &&
+    sensor_cfg_ptr_->sensor_model != drivers::SensorModel::HESAI_FTX180;
 
   if (hw_interface_wrapper_ && !use_udp_only && lidar_range_supported) {
     auto status =
@@ -174,6 +176,10 @@ nebula::Status HesaiRosWrapper::declare_and_get_sensor_config_params()
     rcl_interfaces::msg::ParameterDescriptor descriptor = param_read_write();
     if (config.sensor_model == drivers::SensorModel::HESAI_PANDARAT128) {
       descriptor.integer_range = int_range(30, 150, 1);
+    } else if (config.sensor_model == drivers::SensorModel::HESAI_FTX180) {
+      descriptor.integer_range = int_range(0, 180, 1);
+    } else if (config.sensor_model == drivers::SensorModel::HESAI_FTX140) {
+      descriptor.integer_range = int_range(20, 160, 1);
     } else {
       descriptor.integer_range = int_range(0, 359, 1);
     }
@@ -570,7 +576,9 @@ rcl_interfaces::msg::SetParametersResult HesaiRosWrapper::on_parameter_change(
 
   if (
     new_calibration_ptr && hw_interface_wrapper_ &&
-    sensor_cfg_ptr_->sensor_model != drivers::SensorModel::HESAI_PANDARAT128) {
+    sensor_cfg_ptr_->sensor_model != drivers::SensorModel::HESAI_PANDARAT128 &&
+    sensor_cfg_ptr_->sensor_model != drivers::SensorModel::HESAI_FTX140 &&
+    sensor_cfg_ptr_->sensor_model != drivers::SensorModel::HESAI_FTX180) {
     auto status =
       hw_interface_wrapper_->hw_interface()->check_and_set_lidar_range(*new_calibration_ptr);
     if (status != Status::OK) {
@@ -618,7 +626,9 @@ void HesaiRosWrapper::receive_cloud_packet_callback(
 
 std::string HesaiRosWrapper::get_calibration_parameter_name(drivers::SensorModel model) const
 {
-  if (model == drivers::SensorModel::HESAI_PANDARAT128) {
+  if (
+    model == drivers::SensorModel::HESAI_PANDARAT128 ||
+    model == drivers::SensorModel::HESAI_FTX140 || model == drivers::SensorModel::HESAI_FTX180) {
     return "correction_file";
   }
 
@@ -631,7 +641,11 @@ HesaiRosWrapper::get_calibration_result_t HesaiRosWrapper::get_calibration_data(
   std::shared_ptr<drivers::HesaiCalibrationConfigurationBase> calib;
   const auto & logger = get_logger();
 
-  if (sensor_cfg_ptr_->sensor_model == drivers::SensorModel::HESAI_PANDARAT128) {
+  if (
+    sensor_cfg_ptr_->sensor_model == drivers::SensorModel::HESAI_FTX140 ||
+    sensor_cfg_ptr_->sensor_model == drivers::SensorModel::HESAI_FTX180) {
+    calib = std::make_shared<drivers::HesaiCorrectionFTX>();
+  } else if (sensor_cfg_ptr_->sensor_model == drivers::SensorModel::HESAI_PANDARAT128) {
     calib = std::make_shared<drivers::HesaiCorrection>();
   } else {
     calib = std::make_shared<drivers::HesaiCalibrationConfiguration>();
