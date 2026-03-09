@@ -104,6 +104,21 @@ struct Header12B
   uint8_t flags;
 };
 
+struct Header19B
+{
+  uint16_t sop;
+  uint8_t protocol_major;
+  uint8_t protocol_minor;
+  uint8_t reserved1[2];
+
+  uint8_t laser_num;
+  uint8_t block_num;
+  uint8_t return_num;
+  uint8_t dis_unit;
+  uint8_t reserved2[8];
+  uint8_t flags;
+};
+
 struct Header8B
 {
   /// @brief Start of Packet, 0xEEFF
@@ -127,6 +142,14 @@ struct Unit4B
   uint16_t distance;
   uint8_t reflectivity;
   uint8_t confidence_or_reserved;
+};
+
+struct Unit5B
+{
+  uint16_t distance;
+  uint8_t reflectivity;
+  uint8_t reserved_or_confidence1;
+  uint8_t reserved_or_confidence2;
 };
 
 template <typename UnitT, size_t UnitN>
@@ -161,6 +184,16 @@ struct SOBBlock
   UnitT units[UnitN];
 
   [[nodiscard]] uint32_t get_azimuth() const { return azimuth; }
+};
+
+template <typename UnitT, size_t UnitN>
+struct NoAzimuthBlock
+{
+  using unit_t = UnitT;
+  UnitT units[UnitN];
+
+  // Dummy azimuth to satisfy generic decoder expectations if called
+  [[nodiscard]] uint32_t get_azimuth() const { return 0; }
 };
 
 template <typename BlockT, size_t BlockN>

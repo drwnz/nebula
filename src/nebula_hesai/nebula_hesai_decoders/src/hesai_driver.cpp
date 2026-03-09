@@ -5,6 +5,7 @@
 #include "nebula_core_decoders/point_filters/blockage_mask.hpp"
 #include "nebula_hesai_decoders/decoders/functional_safety.hpp"
 #include "nebula_hesai_decoders/decoders/hesai_decoder.hpp"
+#include "nebula_hesai_decoders/decoders/hesai_ftx.hpp"
 #include "nebula_hesai_decoders/decoders/pandar_128e3x.hpp"
 #include "nebula_hesai_decoders/decoders/pandar_128e4x.hpp"
 #include "nebula_hesai_decoders/decoders/pandar_40.hpp"
@@ -83,6 +84,14 @@ HesaiDriver::HesaiDriver(
         std::move(blockage_mask_plugin));
       break;
     }
+    case SensorModel::HESAI_FTX140:
+      scan_decoder_ = initialize_decoder<FTX_140>(
+        sensor_configuration, calibration_data, alive_cb, stuck_cb, status_cb, lost_cb);
+      break;
+    case SensorModel::HESAI_FTX180:
+      scan_decoder_ = initialize_decoder<FTX_180>(
+        sensor_configuration, calibration_data, alive_cb, stuck_cb, status_cb, lost_cb);
+      break;
     case SensorModel::UNKNOWN:
       driver_status_ = nebula::Status::INVALID_SENSOR_MODEL;
       throw std::runtime_error("Invalid sensor model.");

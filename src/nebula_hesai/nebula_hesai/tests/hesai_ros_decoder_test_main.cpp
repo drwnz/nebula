@@ -25,7 +25,7 @@
 namespace nebula::test
 {
 
-const nebula::ros::HesaiRosDecoderTestParams TEST_CONFIGS[9] = {
+const nebula::ros::HesaiRosDecoderTestParams TEST_CONFIGS[11] = {
   {"Pandar40P", "Dual", "Pandar40P.csv", "40p/1673400149412331409", "hesai", 0, 0.0, 0., 360., 0.3F,
    200.F},
   {"Pandar64", "Dual", "Pandar64.csv", "64/1673403880599376836", "hesai", 0, 0.0, 0., 360., 0.3F,
@@ -43,7 +43,12 @@ const nebula::ros::HesaiRosDecoderTestParams TEST_CONFIGS[9] = {
   {"PandarQT128", "LastStrongest", "PandarQT128.csv", "qt128/1730273789074637152", "hesai", 0, 0.0,
    0., 360., 0.3F, 300.F},
   {"Pandar128E4X", "LastStrongest", "Pandar128E4X.csv", "ot128/1730271167765338806", "hesai", 0,
-   0.0, 0., 360., 0.3F, 300.F}};
+   0.0, 0., 360., 0.3F, 300.F},
+  // TODO(@drwnz): Capture data and set genuine pcap/ptp path for FTX_140 and FTX_180
+  {"FTX_140", "LastStrongest", "FTX_140.csv", "ftx140/TODO", "hesai", 90, 0.0, 20., 160., 0.05F,
+   25.0F},
+  {"FTX_180", "LastStrongest", "FTX_180.csv", "ftx180/TODO", "hesai", 90, 0.0, 0., 180., 0.05F,
+   25.0F}};
 
 // Compares geometrical output of decoder against pre-recorded reference pointcloud.
 TEST_P(DecoderTest, TestPcd)
