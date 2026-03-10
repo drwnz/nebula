@@ -4,6 +4,9 @@
 
 #include "nebula_robosense_decoders/decoders/bpearl_v3.hpp"
 #include "nebula_robosense_decoders/decoders/bpearl_v4.hpp"
+#include "nebula_robosense_decoders/decoders/e1.hpp"
+#include "nebula_robosense_decoders/decoders/em4.hpp"
+#include "nebula_robosense_decoders/decoders/emx.hpp"
 #include "nebula_robosense_decoders/decoders/helios.hpp"
 #include "nebula_robosense_decoders/decoders/robosense_info_decoder.hpp"
 
@@ -18,7 +21,7 @@ namespace nebula::drivers
 RobosenseInfoDriver::RobosenseInfoDriver(
   const std::shared_ptr<const RobosenseSensorConfiguration> & sensor_configuration)
 {
-  // initialize proper parser from cloud config's model and echo mode
+  // Initialize proper parser from cloud config's model and echo mode
   driver_status_ = nebula::Status::OK;
   switch (sensor_configuration->sensor_model) {
     case SensorModel::UNKNOWN:
@@ -32,6 +35,15 @@ RobosenseInfoDriver::RobosenseInfoDriver(
       break;
     case SensorModel::ROBOSENSE_HELIOS:
       info_decoder_.reset(new RobosenseInfoDecoder<Helios>());
+      break;
+    case SensorModel::ROBOSENSE_E1:
+      info_decoder_.reset(new RobosenseInfoDecoder<E1>());
+      break;
+    case SensorModel::ROBOSENSE_EM4:
+      info_decoder_.reset(new RobosenseInfoDecoder<EM4>());
+      break;
+    case SensorModel::ROBOSENSE_EMX:
+      info_decoder_.reset(new RobosenseInfoDecoder<EMX>());
       break;
 
     default:
