@@ -1416,6 +1416,9 @@ int HesaiHwInterface::nebula_model_to_hesai_model_no(nebula::drivers::SensorMode
       return 42;
     case SensorModel::HESAI_PANDARAT128:
       return 48;
+    case SensorModel::HESAI_FTX140:
+    case SensorModel::HESAI_FTX180:
+      return -1;
     // All other vendors and unknown sensors
     default:
       return -1;
