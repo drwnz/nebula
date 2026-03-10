@@ -17,6 +17,7 @@
 #include "nebula_robosense_common/robosense_common.hpp"
 #include "nebula_robosense_decoders/decoders/robosense_packet.hpp"
 #include "nebula_robosense_decoders/decoders/robosense_scan_decoder.hpp"
+#include "nebula_robosense_decoders/decoders/robosense_sensor_directional.hpp"
 
 #include <rclcpp/rclcpp.hpp>
 
@@ -103,6 +104,7 @@ protected:
   void decode_packet()
   {
     uint64_t packet_timestamp_ns = robosense_packet::get_timestamp_ns(packet_);
+    bool is_dual_return = (packet_.header.return_mode.value() == DirectionalReturnModeFlags::dual);
 
     for (size_t blk = 0; blk < SensorT::packet_t::n_blocks; ++blk) {
       auto & block = packet_.body.blocks[blk];
@@ -110,28 +112,54 @@ protected:
       for (size_t chan = 0; chan < SensorT::packet_t::n_channels; ++chan) {
         auto & unit = block.units[chan];
 
-        float dist = unit.distance.value() * distance_resolution_m_;
-
-        if (dist < SensorT::min_range || dist > SensorT::max_range || dist == 0.0f) {
-          continue;
-        }
-
-        NebulaPoint point;
-        point.distance = dist;
-        point.intensity = unit.reflectivity.value();
-        point.return_type = static_cast<uint8_t>(ReturnType::STRONGEST);
-        point.channel = static_cast<uint16_t>(chan);
-
         uint32_t packet_to_scan_offset_ns =
           static_cast<uint32_t>(packet_timestamp_ns - decode_scan_timestamp_ns_);
-        point.time_stamp = packet_to_scan_offset_ns;
 
-        populate_point_xyz(point, unit, dist);
+        // First return (always present)
+        float dist = unit.distance.value() * distance_resolution_m_;
+        if (dist >= SensorT::min_range && dist <= SensorT::max_range && dist != 0.0f) {
+          NebulaPoint point;
+          point.distance = dist;
+          point.intensity = unit.reflectivity.value();
+          point.return_type = is_dual_return ? static_cast<uint8_t>(ReturnType::STRONGEST)
+                                             : static_cast<uint8_t>(ReturnType::STRONGEST);
+          point.channel = static_cast<uint16_t>(chan);
+          point.time_stamp = packet_to_scan_offset_ns;
+          populate_point_xyz(point, unit, dist);
+          decode_pc_->emplace_back(point);
+        }
 
-        decode_pc_->emplace_back(point);
+        // Second return (only for sensors with radius_sd, e.g. EMX, in dual mode)
+        if (is_dual_return) {
+          decode_second_return(unit, chan, packet_to_scan_offset_ns);
+        }
       }
     }
   }
+
+  /// @brief Decode second return from units that have radius_sd/intensity_sd (e.g. EMX).
+  /// SFINAE-enabled: only compiles for unit types with radius_sd and intensity_sd members.
+  template <typename U>
+  auto decode_second_return(const U & unit, size_t chan, uint32_t time_stamp_ns)
+    -> decltype(unit.radius_sd.value(), unit.intensity_sd.value(), void())
+  {
+    float dist_sd = unit.radius_sd.value() * distance_resolution_m_;
+    if (dist_sd < SensorT::min_range || dist_sd > SensorT::max_range || dist_sd == 0.0f) {
+      return;
+    }
+
+    NebulaPoint point;
+    point.distance = dist_sd;
+    point.intensity = unit.intensity_sd.value();
+    point.return_type = static_cast<uint8_t>(ReturnType::SECONDSTRONGEST);
+    point.channel = static_cast<uint16_t>(chan);
+    point.time_stamp = time_stamp_ns;
+    populate_point_xyz(point, unit, dist_sd);
+    decode_pc_->emplace_back(point);
+  }
+
+  /// @brief Fallback for units without second return data (E1, EM4)
+  void decode_second_return(...) {}
 
   /// @brief Populate XYZ coordinates from direction vectors (for sensors with x, y, z in Unit).
   /// Uses SFINAE to detect members.

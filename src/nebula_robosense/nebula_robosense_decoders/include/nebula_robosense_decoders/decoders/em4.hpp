@@ -101,19 +101,19 @@ struct InfoPacket
   big_uint8_buf_t time_sync_status;
   Timestamp time;
   big_uint8_buf_t phy_mode;
-  uint8_t src_ip[4];
-  uint8_t net_mask[4];
-  uint8_t mac_address[6];
-  uint8_t msop_dst_ip[4];
+  IpAddress src_ip;
+  IpAddress net_mask;
+  MacAddress mac_address;
+  IpAddress msop_dst_ip;
   big_uint16_buf_t msop_src_port;
   big_uint16_buf_t msop_dst_port;
-  uint8_t difop1_dst_ip[4];
+  IpAddress difop1_dst_ip;
   big_uint16_buf_t difop1_src_port;
   big_uint16_buf_t difop1_dst_port;
-  uint8_t difop2_dst_ip[4];
+  IpAddress difop2_dst_ip;
   big_uint16_buf_t difop2_src_port;
   big_uint16_buf_t difop2_dst_port;
-  uint8_t doip_dst_ip[4];
+  IpAddress doip_dst_ip;
   big_uint16_buf_t doip_src_port;
   uint8_t reserved5[10];
   big_uint16_buf_t mcu_vmon_rx_d1v1;
@@ -188,10 +188,32 @@ private:
   static constexpr uint8_t sync_mode_internal_flag = 0x00;
   static constexpr uint8_t sync_mode_gptp_flag = 0x03;
 
+  // EM4 DIFOP wave mode byte values
+  static constexpr uint8_t wave_mode_nearest_farthest = 0x00;
+  static constexpr uint8_t wave_mode_strongest = 0x04;
+  static constexpr uint8_t wave_mode_farthest = 0x05;
+  static constexpr uint8_t wave_mode_nearest = 0x06;
+
 public:
   static constexpr float min_range = 0.2f;
   static constexpr float max_range = 300.f;
   static constexpr size_t max_scan_buffer_points = 1248000;
+
+  ReturnMode get_return_mode(const robosense_packet::em4::InfoPacket & info_packet) override
+  {
+    switch (info_packet.wave_mode.value()) {
+      case wave_mode_nearest_farthest:
+        return ReturnMode::DUAL;
+      case wave_mode_strongest:
+        return ReturnMode::SINGLE_STRONGEST;
+      case wave_mode_farthest:
+        return ReturnMode::SINGLE_LAST;
+      case wave_mode_nearest:
+        return ReturnMode::SINGLE_FIRST;
+      default:
+        return ReturnMode::UNKNOWN;
+    }
+  }
 
   std::map<std::string, std::string> get_sensor_info(
     const robosense_packet::em4::InfoPacket & info_packet) override
@@ -212,6 +234,12 @@ public:
 
     populate_sync_status_info(sensor_info, info_packet.time_sync_status.value());
     sensor_info["time"] = std::to_string(info_packet.time.get_time_in_ns());
+
+    // Network config from DIFOP
+    sensor_info["sensor_ip"] = info_packet.src_ip.to_string();
+    sensor_info["dest_ip"] = info_packet.msop_dst_ip.to_string();
+    sensor_info["msop_dst_port"] = std::to_string(info_packet.msop_dst_port.value());
+    sensor_info["difop_dst_port"] = std::to_string(info_packet.difop1_dst_port.value());
     return sensor_info;
   }
 };

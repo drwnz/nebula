@@ -95,7 +95,12 @@ nebula::Status RobosenseRosWrapper::declare_and_get_sensor_config_params()
   config.gnss_port = declare_parameter<uint16_t>("gnss_port", param_read_only());
   config.frame_id = declare_parameter<std::string>("frame_id", param_read_write());
 
-  {
+  // scan_phase is only relevant for mechanical sensors that use angle-based frame splitting.
+  // Directional sensors (E1, EM4, EMX) use packet-sequence-based splitting.
+  if (
+    config.sensor_model != drivers::SensorModel::ROBOSENSE_E1 &&
+    config.sensor_model != drivers::SensorModel::ROBOSENSE_EM4 &&
+    config.sensor_model != drivers::SensorModel::ROBOSENSE_EMX) {
     rcl_interfaces::msg::ParameterDescriptor descriptor = param_read_write();
     descriptor.additional_constraints = "Angle where scans begin (degrees, [0.,360.])";
     descriptor.floating_point_range = float_range(0, 360, 0.01);
@@ -193,8 +198,80 @@ void RobosenseRosWrapper::receive_info_packet_callback(std::vector<uint8_t> & pa
 
   if (!decoder_wrapper_) {
     auto new_cfg = *sensor_cfg_ptr_;
-    new_cfg.return_mode = info_driver_->get_return_mode();
+
+    // Check for configuration mismatches between driver settings and sensor-reported values.
+    // Since RoboSense sensors cannot be configured from the driver, we warn the user
+    // about any discrepancies so they can adjust either the driver config or the sensor
+    // (via RSView or other vendor tools).
+    auto sensor_return_mode = info_driver_->get_return_mode();
+    static bool warned_return_mode_mismatch = false;
+    if (
+      !warned_return_mode_mismatch && sensor_return_mode != drivers::ReturnMode::UNKNOWN &&
+      sensor_return_mode != new_cfg.return_mode) {
+      warned_return_mode_mismatch = true;
+      RCLCPP_WARN_STREAM(
+        get_logger(), "Return mode mismatch: driver configured '"
+                        << new_cfg.return_mode << "' but sensor reports '" << sensor_return_mode
+                        << "'. Using sensor-reported value.");
+    }
+
+    // Check network config mismatches (sensor IP, host IP, ports)
+    static bool warned_network_mismatch = false;
+    if (!warned_network_mismatch) {
+      auto sensor_info = info_driver_->get_sensor_info();
+      std::string warnings;
+
+      auto check_field =
+        [&](const std::string & key, const std::string & driver_val, const std::string & label) {
+          auto it = sensor_info.find(key);
+          if (
+            it != sensor_info.end() && !it->second.empty() && it->second != "0.0.0.0" &&
+            it->second != "0" && it->second != driver_val) {
+            warnings +=
+              "  " + label + ": driver='" + driver_val + "', sensor='" + it->second + "'\n";
+          }
+        };
+
+      check_field("sensor_ip", new_cfg.sensor_ip, "sensor_ip");
+      check_field("dest_ip", new_cfg.host_ip, "host_ip");
+      check_field("msop_dst_port", std::to_string(new_cfg.data_port), "data_port");
+      check_field("difop_dst_port", std::to_string(new_cfg.gnss_port), "gnss_port");
+
+      if (!warnings.empty()) {
+        warned_network_mismatch = true;
+        RCLCPP_WARN_STREAM(
+          get_logger(), "Network config mismatch between driver and sensor:\n"
+                          << warnings << "The driver may not receive data if these do not match.");
+      }
+    }
+
+    new_cfg.return_mode = sensor_return_mode;
     new_cfg.use_sensor_time = info_driver_->get_sync_status();
+
+    // Report time sync status once on startup
+    static bool reported_sync_status = false;
+    if (!reported_sync_status) {
+      reported_sync_status = true;
+      auto sensor_info = info_driver_->get_sensor_info();
+      auto sync_mode_it = sensor_info.find("time_sync_mode");
+      auto sync_status_it = sensor_info.find("sync_status");
+
+      std::string sync_mode =
+        (sync_mode_it != sensor_info.end()) ? sync_mode_it->second : "unknown";
+      std::string sync_status =
+        (sync_status_it != sensor_info.end()) ? sync_status_it->second : "unknown";
+
+      if (new_cfg.use_sensor_time) {
+        RCLCPP_INFO_STREAM(
+          get_logger(), "Sensor time sync: mode='" << sync_mode << "', status='" << sync_status
+                                                   << "'. Using sensor timestamps.");
+      } else {
+        RCLCPP_WARN_STREAM(
+          get_logger(), "Sensor time sync: mode='"
+                          << sync_mode << "', status='" << sync_status
+                          << "'. Sync not active — using host time instead of sensor timestamps.");
+      }
+    }
     auto calib = info_driver_->get_sensor_calibration();
     calib.create_corrected_channels();
 
@@ -267,8 +344,15 @@ rcl_interfaces::msg::SetParametersResult RobosenseRosWrapper::on_parameter_chang
   std::string _return_mode = "";
   bool got_any =
     get_param(p, "return_mode", _return_mode) | get_param(p, "frame_id", new_cfg.frame_id) |
-    get_param(p, "scan_phase", new_cfg.scan_phase) |
     get_param(p, "dual_return_distance_threshold", new_cfg.dual_return_distance_threshold);
+
+  // scan_phase only applies to mechanical sensors
+  if (
+    new_cfg.sensor_model != drivers::SensorModel::ROBOSENSE_E1 &&
+    new_cfg.sensor_model != drivers::SensorModel::ROBOSENSE_EM4 &&
+    new_cfg.sensor_model != drivers::SensorModel::ROBOSENSE_EMX) {
+    got_any |= get_param(p, "scan_phase", new_cfg.scan_phase);
+  }
 
   // Currently, none of the wrappers have writeable parameters, so their update logic is not
   // implemented
