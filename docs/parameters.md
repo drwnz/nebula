@@ -52,6 +52,13 @@ Set this parameter to `""` to disable multicast.
 The ports at which data streams from the sensor arrive. If multiple sensors are connected to one machine, make sure that sensor data streams are separated by setting these ports to different values for each sensor.
 These settings have to be mirrored in the sensor's settings for sensors where Nebula cannot set them automatically (e.g. Robosense).
 
+!!! note "Robosense defaults"
+
+    The default ports for Robosense sensors are `6699` (MSOP data) and `7788` (DIFOP info).
+    The default sensor IP is `192.168.1.200` and the default host IP is `192.168.1.102`.
+    If the driver's network settings do not match what the sensor reports in its DIFOP packets,
+    a warning will be logged on startup.
+
 ### CAN-FD-Based Sensors
 
 #### `interface`
@@ -90,6 +97,19 @@ The maximum distance in meters for any point. Points farther away than this are 
 Each laser beam can result in multiple returns: if there is a semi-transparent object in front of a solid one, a first weak return, and a strong last return will be reported.
 Depending on perception requirements, one might be interested in specific returns, e.g. the strongest and last returns, or only the first return.
 This parameter is used to set this preference.
+
+!!! note "Robosense"
+
+    Robosense sensors support `Dual`, `Strongest`, `Last`, and `First` return modes.
+    The return mode cannot be changed from the driver — it is read from the sensor's DIFOP
+    packet and a warning is logged if it does not match the driver's configured value.
+    The EMX sensor supports dual return decoding, outputting both strongest and second-strongest
+    returns per beam when the sensor is in dual mode.
+
+### `scan_phase`
+
+The angle (in degrees, `0.0` to `360.0`) at which the scan starts. Only applies to mechanical LiDARs.
+Robosense directional sensors (E1, EM4, EMX) use packet-sequence-based frame splitting and do not support `scan_phase`.
 
 ### `dual_return_distance_threshold`
 
