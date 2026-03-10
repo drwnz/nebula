@@ -31,6 +31,12 @@ constexpr uint16_t helios_packet_size = 1248;
 constexpr uint16_t helios_info_packet_size = 1248;
 constexpr uint16_t bpearl_packet_size = 1248;
 constexpr uint16_t bpearl_info_packet_size = 1248;
+constexpr uint16_t e1_packet_size = 1200;
+constexpr uint16_t e1_info_packet_size = 256;
+constexpr uint16_t em4_packet_size = 1084;
+constexpr uint16_t em4_info_packet_size = 1162;  // DIFOP2 for EM4 is 1162 bytes
+constexpr uint16_t emx_packet_size = 1404;       // Following rs_driver instead of EMX manual
+constexpr uint16_t emx_info_packet_size = 256;
 
 /// @brief Hardware interface of Robosense driver
 class RobosenseHwInterface

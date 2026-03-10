@@ -97,7 +97,10 @@ Status RobosenseHwInterface::set_sensor_configuration(
 {
   if (!(sensor_configuration->sensor_model == SensorModel::ROBOSENSE_BPEARL_V3 ||
         sensor_configuration->sensor_model == SensorModel::ROBOSENSE_BPEARL_V4 ||
-        sensor_configuration->sensor_model == SensorModel::ROBOSENSE_HELIOS)) {
+        sensor_configuration->sensor_model == SensorModel::ROBOSENSE_HELIOS ||
+        sensor_configuration->sensor_model == SensorModel::ROBOSENSE_E1 ||
+        sensor_configuration->sensor_model == SensorModel::ROBOSENSE_EM4 ||
+        sensor_configuration->sensor_model == SensorModel::ROBOSENSE_EMX)) {
     return Status::INVALID_SENSOR_MODEL;
   }
 

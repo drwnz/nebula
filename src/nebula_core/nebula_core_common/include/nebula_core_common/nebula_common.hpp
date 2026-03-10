@@ -202,6 +202,9 @@ enum class SensorModel : uint8_t {
   ROBOSENSE_HELIOS,
   ROBOSENSE_BPEARL_V3,
   ROBOSENSE_BPEARL_V4,
+  ROBOSENSE_E1,
+  ROBOSENSE_EM4,
+  ROBOSENSE_EMX,
   CONTINENTAL_ARS548,
   CONTINENTAL_SRR520
 };
@@ -283,6 +286,15 @@ inline std::ostream & operator<<(std::ostream & os, nebula::drivers::SensorModel
       break;
     case SensorModel::ROBOSENSE_BPEARL_V4:
       os << "BPEARL V4.0";
+      break;
+    case SensorModel::ROBOSENSE_E1:
+      os << "E1";
+      break;
+    case SensorModel::ROBOSENSE_EM4:
+      os << "EM4";
+      break;
+    case SensorModel::ROBOSENSE_EMX:
+      os << "EMX";
       break;
     case SensorModel::CONTINENTAL_ARS548:
       os << "ARS548";
@@ -421,6 +433,9 @@ inline SensorModel sensor_model_from_string(const std::string & sensor_model)
   if (sensor_model == "Bpearl" || sensor_model == "Bpearl_V4")
     return SensorModel::ROBOSENSE_BPEARL_V4;
   if (sensor_model == "Bpearl_V3") return SensorModel::ROBOSENSE_BPEARL_V3;
+  if (sensor_model == "E1") return SensorModel::ROBOSENSE_E1;
+  if (sensor_model == "EM4") return SensorModel::ROBOSENSE_EM4;
+  if (sensor_model == "EMX") return SensorModel::ROBOSENSE_EMX;
   // Continental
   if (sensor_model == "ARS548") return SensorModel::CONTINENTAL_ARS548;
   if (sensor_model == "SRR520") return SensorModel::CONTINENTAL_SRR520;
@@ -471,6 +486,12 @@ inline std::string sensor_model_to_string(const SensorModel & sensor_model)
       return "Bpearl_V3";
     case SensorModel::ROBOSENSE_BPEARL_V4:
       return "Bpearl_V4";
+    case SensorModel::ROBOSENSE_E1:
+      return "E1";
+    case SensorModel::ROBOSENSE_EM4:
+      return "EM4";
+    case SensorModel::ROBOSENSE_EMX:
+      return "EMX";
     // Continental
     case SensorModel::CONTINENTAL_ARS548:
       return "ARS548";
