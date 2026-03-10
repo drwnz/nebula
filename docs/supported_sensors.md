@@ -37,6 +37,15 @@ The `sensor_model` parameter below decides which sensor driver is launched.
 | ------ | -------------- | ------------------ | ----------- |
 | Bpearl | Bpearl         | Bpearl.param.yaml  | ⚠️          |
 | Helios | Helios         | Helios.param.yaml  | ⚠️          |
+| E1     | E1             | E1.param.yaml      | ⚠️          |
+| EM4    | EM4            | EM4.param.yaml     | ⚠️          |
+| EMX    | EMX            | EMX.param.yaml     | ⚠️          |
+
+!!! note
+
+    Robosense sensors cannot be configured from the driver. On startup, Nebula reads the sensor's
+    current configuration via DIFOP packets and warns if it differs from the driver's settings
+    (return mode, IP addresses, ports, time sync status). Use RSView to change the sensor's settings.
 
 ## Continental radars
 
