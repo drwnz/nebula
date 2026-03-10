@@ -10,8 +10,8 @@
     <choice value="PandarXT16" />
     <choice value="PandarXT32" />
     <choice value="PandarXT32M" />
-    <choice value="FTX_140" />
-    <choice value="FTX_180" />
+    <choice value="FTX140" />
+    <choice value="FTX180" />
   </arg>
   <arg name="launch_hw" default="true" description="Whether to connect to a real sensor (true) or to accept packet messages (false).">
     <choice value="true" />
