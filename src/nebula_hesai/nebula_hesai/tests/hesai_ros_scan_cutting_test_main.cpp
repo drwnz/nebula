@@ -52,9 +52,9 @@ const nebula::ros::HesaiRosDecoderTestParams g_test_configs[] = {
   {"PandarAT128", "LastStrongest", "PandarAT128.dat", "at128/all_points", "hesai", 0, 135.0, 45.,
    135., 1.f, 180.f},
   // TODO(@drwnz): Capture data and set genuine pcap/ptp path for FTX140 and FTX180
-  {"FTX140", "LastStrongest", "FTX_140.dat", "ftx140/TODO", "hesai", 90, 0.0, 20., 160., 0.05f,
+  {"FTX140", "LastStrongest", "FTX140.dat", "ftx140/TODO", "hesai", 90, 0.0, 20., 160., 0.05f,
    25.0f},
-  {"FTX180", "LastStrongest", "FTX_180.dat", "ftx180/TODO", "hesai", 90, 0.0, 0., 180., 0.05f,
+  {"FTX180", "LastStrongest", "FTX180.dat", "ftx180/TODO", "hesai", 90, 0.0, 0., 180., 0.05f,
    25.0f},
 };
 

@@ -51,6 +51,43 @@ public:
     // Build lookup table
     // ////////////////////////////////////////
 
+    // Check if we have FTX-style XYZ corrections
+    auto ftx_corrections = std::dynamic_pointer_cast<const HesaiCorrectionFTX>(sensor_calibration);
+    if (ftx_corrections && ftx_corrections->valid_) {
+      for (size_t j = 0; j < ColumnN; j++)  // column
+      {
+        for (size_t i = 0; i < RowN; i++)  // row
+        {
+          const auto & corr = ftx_corrections->corrections_[i * 256 + j]; // ALWAYS stride 256 for FT binary calibration
+          auto C = CorrectedAngleData();
+
+          // Normalize the input vectors to ensure they are unit vectors.
+          // This prevents "stretched" pointclouds if the calibration stores non-normalized vectors.
+          float norm = static_cast<float>(std::sqrt(corr.x * corr.x + corr.y * corr.y + corr.z * corr.z));
+          float cx = corr.x / (norm > 1e-6f ? norm : 1.0f);
+          float cy = corr.y / (norm > 1e-6f ? norm : 1.0f);
+          float cz = corr.z / (norm > 1e-6f ? norm : 1.0f);
+
+          C.azimuth_rad = static_cast<float>(std::atan2(cx, cy));
+          C.elevation_rad = static_cast<float>(std::asin(cz));
+
+          C.sin_elevation = cz;
+          C.cos_elevation = static_cast<float>(std::sqrt(cx * cx + cy * cy));
+          
+          if (C.cos_elevation > 1e-6f) {
+            C.sin_azimuth = cx / C.cos_elevation;
+            C.cos_azimuth = cy / C.cos_elevation;
+          } else {
+            C.sin_azimuth = 0.f;
+            C.cos_azimuth = 1.f;
+          }
+
+          correctedAngleData[j][i] = C;
+        }
+      }
+      return;
+    }
+
     size_t calib_i = 0;
 
     // Res coefficient is usually not used here as CSV gives values in degrees
@@ -103,16 +140,16 @@ public:
     return CorrectedAzimuths<ReturnChannelN, float>();
   };
 
-  static bool passed_emit_angle(uint32_t last_azimuth, uint32_t current_azimuth)
+  static bool passed_emit_angle(uint32_t last_frame_id, uint32_t current_frame_id)
   {
     // Generally FTX produces one packet or stream per frame; true frame breaks happen
-    // when packet frame_id changes, but here we provide a fallback
-    return last_azimuth > current_azimuth;
+    // when packet frame_id changes
+    return last_frame_id != current_frame_id;
   }
 
-  static bool passed_timestamp_reset_angle(uint32_t last_azimuth, uint32_t current_azimuth)
+  static bool passed_timestamp_reset_angle(uint32_t last_frame_id, uint32_t current_frame_id)
   {
-    return last_azimuth > current_azimuth;
+    return last_frame_id != current_frame_id;
   }
 };
 

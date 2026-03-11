@@ -38,7 +38,6 @@ struct TailFTX
   uint8_t row_id;
   uint8_t frame_id;  // counter, 0-255; incremented at each new scan
   uint8_t operational_mode;
-  uint8_t reserved2;
   uint8_t return_mode;    // 0x33 = First
   uint16_t frame_period;  // 100, ms (sensor works @ 10Hz)
   SecondsSinceEpoch date_time;
@@ -53,7 +52,7 @@ struct PacketFTX : public hesai_packet::PacketBase<1, 96, 1, 1>
   // defined by subclasses below
   using body_t = Body<NoAzimuthBlock<Unit5B, PacketFTX::n_channels>, PacketFTX::n_blocks>;
 
-  Header19B header;
+  Header25B header;
   body_t body;
   TailFTX tail;  // tail contains column_id and row_id
 
@@ -65,7 +64,7 @@ struct PacketFTX : public hesai_packet::PacketBase<1, 96, 1, 1>
 
 }  // namespace hesai_packet
 
-class FTX_140 : public HesaiSensor<hesai_packet::PacketFTX, AngleCorrectionType::CALIBRATION>
+class FTX140 : public HesaiSensor<hesai_packet::PacketFTX, AngleCorrectionType::CALIBRATION>
 {
 private:
 public:
@@ -75,7 +74,7 @@ public:
   using correction_data_t = HesaiCalibrationConfiguration;
 
   static constexpr float min_range = 0.05;
-  static constexpr float max_range = 25.0;  // Depending on mode
+  static constexpr float max_range = 300.0;  // Depending on mode
   static constexpr int32_t col_N = 256;
   static constexpr int32_t row_N = 192;
   static constexpr size_t max_scan_buffer_points = col_N * row_N * 2;  // For dual return
@@ -128,7 +127,7 @@ public:
   }
 };
 
-class FTX_180 : public HesaiSensor<hesai_packet::PacketFTX, AngleCorrectionType::CALIBRATION>
+class FTX180 : public HesaiSensor<hesai_packet::PacketFTX, AngleCorrectionType::CALIBRATION>
 {
 private:
 public:
@@ -138,7 +137,7 @@ public:
   using correction_data_t = HesaiCalibrationConfiguration;
 
   static constexpr float min_range = 0.05;
-  static constexpr float max_range = 25.0;
+  static constexpr float max_range = 300.0;
   static constexpr int32_t col_N = 224;  // 192x224 channel array
   static constexpr int32_t row_N = 192;
   static constexpr size_t max_scan_buffer_points = col_N * row_N * 2;

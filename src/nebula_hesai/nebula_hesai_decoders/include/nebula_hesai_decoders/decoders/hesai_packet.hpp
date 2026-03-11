@@ -89,6 +89,24 @@ struct SecondsSinceEpoch
   }
 };
 
+struct Header25B
+{
+  uint16_t sop;
+  uint8_t protocol_major;
+  uint8_t protocol_minor;
+  uint8_t time_division_multiplexing_version;
+  uint8_t reserved1;
+  uint16_t total_column_num;
+  uint16_t total_row_num;
+  uint8_t column_resolution;
+  uint8_t row_resolution;
+  uint8_t first_block_return;
+  uint8_t dis_unit;
+  uint8_t reserved2;
+  uint16_t packet_channel_num;
+  uint8_t reserved3[8];
+};
+
 struct Header12B
 {
   uint16_t sop;
@@ -104,26 +122,9 @@ struct Header12B
   uint8_t flags;
 };
 
-struct Header19B
-{
-  uint16_t sop;
-  uint8_t protocol_major;
-  uint8_t protocol_minor;
-  uint8_t reserved1[2];
-
-  uint8_t laser_num;
-  uint8_t block_num;
-  uint8_t return_num;
-  uint8_t dis_unit;
-  uint8_t reserved2[8];
-  uint8_t flags;
-};
-
 struct Header8B
 {
-  /// @brief Start of Packet, 0xEEFF
   uint16_t sop;
-
   uint8_t laser_num;
   uint8_t block_num;
   uint8_t reserved1;
@@ -248,7 +249,7 @@ inline int get_n_returns(uint8_t return_mode)
     case return_mode::TRIPLE_FIRST_LAST_STRONGEST:
       return 3;
     default:
-      throw std::runtime_error("Unknown return mode");
+      throw std::runtime_error("Unknown return mode: " + std::to_string(return_mode));
   }
 }
 
