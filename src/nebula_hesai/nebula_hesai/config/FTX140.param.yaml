@@ -16,9 +16,10 @@
     max_range: 25.0
     cloud_min_angle: 20
     cloud_max_angle: 160
-    sync_angle: 90
-    cut_angle: 0.0
+    sync_angle: 20
+    cut_angle: 160.0
     sensor_model: FTX140
+    correction_file: $(find-pkg-share nebula_hesai_decoders)/calibration/$(var sensor_model).dat
     calibration_file: $(find-pkg-share nebula_hesai_decoders)/calibration/$(var sensor_model).csv
     calibration_download_enabled: true
     rotation_speed: 600

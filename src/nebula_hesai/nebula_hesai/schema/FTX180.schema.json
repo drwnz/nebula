@@ -1,9 +1,9 @@
 {
     "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "LiDAR Hesai FTX140 parameters.",
+    "title": "LiDAR Hesai FTX180 parameters.",
     "type": "object",
     "definitions": {
-        "FTX140": {
+        "FTX180": {
             "type": "object",
             "properties": {
                 "host_ip": {
@@ -53,21 +53,21 @@
                 },
                 "cloud_min_angle": {
                     "$ref": "../../../nebula_core/nebula_core_ros/schema/misc.json#/definitions/cloud_min_angle",
-                    "default": "20",
-                    "minimum": 20,
-                    "maximum": 160
+                    "default": "0",
+                    "minimum": 0,
+                    "maximum": 180
                 },
                 "cloud_max_angle": {
                     "$ref": "../../../nebula_core/nebula_core_ros/schema/misc.json#/definitions/cloud_max_angle",
-                    "default": "160",
-                    "minimum": 20,
-                    "maximum": 160
+                    "default": "180",
+                    "minimum": 0,
+                    "maximum": 180
                 },
                 "sync_angle": {
                     "$ref": "lidar_hesai.json#/definitions/sync_angle",
                     "default": "90",
-                    "minimum": 20,
-                    "maximum": 160
+                    "minimum": 0,
+                    "maximum": 180
                 },
                 "cut_angle": {
                     "$ref": "lidar_hesai.json#/definitions/cut_angle",
@@ -78,7 +78,7 @@
                 "sensor_model": {
                     "$ref": "lidar_hesai.json#/definitions/sensor_model",
                     "enum": [
-                        "FTX140"
+                        "FTX180"
                     ]
                 },
                 "calibration_file": {
@@ -97,7 +97,10 @@
                 "return_mode": {
                     "$ref": "../../../nebula_core/nebula_core_ros/schema/misc.json#/definitions/return_mode",
                     "enum": [
-                        "First"
+                        "Last",
+                        "Strongest",
+                        "LastStrongest",
+                        "Dual"
                     ]
                 },
                 "ptp_profile": {
@@ -175,7 +178,7 @@
             "type": "object",
             "properties": {
                 "ros__parameters": {
-                    "$ref": "#/definitions/FTX140"
+                    "$ref": "#/definitions/FTX180"
                 },
                 "additionalProperties": false
             },

@@ -594,9 +594,10 @@ struct HesaiCorrection : public HesaiCalibrationConfigurationBase
 namespace FT
 {
 static constexpr int FT2_CORRECTION_LEN = 256;
-static constexpr int FT2_ROW_MAX = 192;  // Max rows (FTX_180 192x224, FTX_140 192x256)
+static constexpr int FT2_ROW_MAX = 192;  // Max rows (FTX180 192x224, FTX140 192x256)
 static constexpr int FT2_COL_MAX = 256;
 
+#pragma pack(push, 1)
 struct CorrectionDis
 {
   float x;
@@ -679,6 +680,7 @@ struct CorrectionV3
     return pixel_vectors;
   }
 };
+#pragma pack(pop)
 }  // namespace FT
 
 /// @brief struct for Hesai correction configuration (FTX series)

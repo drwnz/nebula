@@ -469,6 +469,12 @@ std::shared_ptr<HesaiLidarStatusBase> HesaiHwInterface::get_lidar_status()
 
 Status HesaiHwInterface::set_spin_rate(uint16_t rpm)
 {
+  if (
+    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX140 ||
+    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX180) {
+    return Status::OK;
+  }
+
   std::vector<unsigned char> request_payload;
   request_payload.emplace_back((rpm >> 8) & 0xff);
   request_payload.emplace_back(rpm & 0xff);
@@ -480,6 +486,11 @@ Status HesaiHwInterface::set_spin_rate(uint16_t rpm)
 
 Status HesaiHwInterface::set_sync_angle(int sync_angle, int angle)
 {
+  if (
+    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX140 ||
+    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX180) {
+    return Status::OK;
+  }
   if (sync_angle < 0 || sync_angle > 360) {
     return Status::SENSOR_CONFIG_ERROR;
   }
@@ -517,6 +528,11 @@ Status HesaiHwInterface::set_standby_mode(int standby_mode)
 
 Status HesaiHwInterface::set_return_mode(int return_mode)
 {
+  if (
+    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX140 ||
+    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX180) {
+    return Status::OK;
+  }
   std::vector<unsigned char> request_payload;
   request_payload.emplace_back(return_mode & 0xff);
 
@@ -887,7 +903,10 @@ Status HesaiHwInterface::set_rot_dir(int mode)
 
 HesaiLidarMonitor HesaiHwInterface::get_lidar_monitor()
 {
-  if (sensor_configuration_->sensor_model == SensorModel::HESAI_PANDARAT128) {
+  if (
+    sensor_configuration_->sensor_model == SensorModel::HESAI_PANDARAT128 ||
+    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX140 ||
+    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX180) {
     throw std::runtime_error("Not supported on this sensor");
   }
 
@@ -981,11 +1000,20 @@ HesaiStatus HesaiHwInterface::check_and_set_config(
   logger_->debug("Start CheckAndSetConfig(HesaiConfig)!");
 #endif
   const auto hesai_config = hesai_config_ptr->get();
+  if (
+    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX140 ||
+    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX180) {
+    return Status::OK;
+  }
+
   auto current_return_mode = nebula::drivers::return_mode_from_int_hesai(
     hesai_config.return_mode, sensor_configuration->sensor_model);
   // Avoids spamming the sensor, which leads to failure when configuring it.
   auto wait_time = 100ms;
-  if (sensor_configuration->return_mode != current_return_mode) {
+  if (
+    sensor_configuration->return_mode != current_return_mode &&
+    sensor_configuration->sensor_model != SensorModel::HESAI_FTX140 &&
+    sensor_configuration->sensor_model != SensorModel::HESAI_FTX180) {
     std::stringstream ss;
     ss << current_return_mode;
     logger_->info("Current LiDAR return_mode: " + ss.str());
@@ -1076,7 +1104,10 @@ HesaiStatus HesaiHwInterface::check_and_set_config(
     std::this_thread::sleep_for(wait_time);
   }
 
-  if (sensor_configuration->sensor_model != SensorModel::HESAI_PANDARAT128) {
+  if (
+    sensor_configuration->sensor_model != SensorModel::HESAI_PANDARAT128 &&
+    sensor_configuration->sensor_model != SensorModel::HESAI_FTX140 &&
+    sensor_configuration->sensor_model != SensorModel::HESAI_FTX180) {
     set_flg = true;
     auto sensor_sync_angle = static_cast<int>(hesai_config.sync_angle.value() / 100);
     auto config_sync_angle = sensor_configuration->sync_angle;
@@ -1276,6 +1307,8 @@ HesaiStatus HesaiHwInterface::check_and_set_config()
 
   if (
     sensor_configuration_->sensor_model == SensorModel::HESAI_PANDARAT128 ||
+    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX140 ||
+    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX180 ||
     sensor_configuration_->sensor_model == SensorModel::HESAI_PANDAR64) {
     return Status::OK;
   }

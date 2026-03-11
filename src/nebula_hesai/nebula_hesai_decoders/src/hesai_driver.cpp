@@ -6,6 +6,7 @@
 #include "nebula_hesai_decoders/decoders/functional_safety.hpp"
 #include "nebula_hesai_decoders/decoders/hesai_decoder.hpp"
 #include "nebula_hesai_decoders/decoders/hesai_ftx.hpp"
+#include "nebula_hesai_decoders/decoders/hesai_solid_state_decoder.hpp"
 #include "nebula_hesai_decoders/decoders/pandar_128e3x.hpp"
 #include "nebula_hesai_decoders/decoders/pandar_128e4x.hpp"
 #include "nebula_hesai_decoders/decoders/pandar_40.hpp"
@@ -85,12 +86,12 @@ HesaiDriver::HesaiDriver(
       break;
     }
     case SensorModel::HESAI_FTX140:
-      scan_decoder_ = initialize_decoder<FTX_140>(
-        sensor_configuration, calibration_data, alive_cb, stuck_cb, status_cb, lost_cb);
+      scan_decoder_ = initialize_ftx_decoder<FTX140>(
+        sensor_configuration, calibration_data, lost_cb);
       break;
     case SensorModel::HESAI_FTX180:
-      scan_decoder_ = initialize_decoder<FTX_180>(
-        sensor_configuration, calibration_data, alive_cb, stuck_cb, status_cb, lost_cb);
+      scan_decoder_ = initialize_ftx_decoder<FTX180>(
+        sensor_configuration, calibration_data, lost_cb);
       break;
     case SensorModel::UNKNOWN:
       driver_status_ = nebula::Status::INVALID_SENSOR_MODEL;
@@ -123,6 +124,26 @@ std::shared_ptr<HesaiScanDecoder> HesaiDriver::initialize_decoder(
     sensor_configuration, std::dynamic_pointer_cast<const CalibT>(calibration_configuration),
     logger_->child("Decoder"), functional_safety_decoder, packet_loss_detector,
     std::move(blockage_mask_plugin));
+}
+
+/// @brief Initialize a HesaiSolidStateDecoder for solid-state FT-series sensors (FTX140, FTX180).
+template <typename SensorT>
+std::shared_ptr<HesaiScanDecoder> HesaiDriver::initialize_ftx_decoder(
+  const std::shared_ptr<const drivers::HesaiSensorConfiguration> & sensor_configuration,
+  const std::shared_ptr<const drivers::HesaiCalibrationConfigurationBase> &
+    calibration_configuration,
+  PacketLossDetectorBase::lost_cb_t lost_cb)
+{
+  auto packet_loss_detector = initialize_packet_loss_detector<SensorT>(lost_cb);
+
+  using CalibT = typename SensorT::angle_corrector_t::correction_data_t;
+  return std::make_shared<HesaiSolidStateDecoder<SensorT>>(
+    sensor_configuration, std::dynamic_pointer_cast<const CalibT>(calibration_configuration),
+    logger_->child("Decoder"),
+    nullptr,  // No functional safety decoder for FTX
+    packet_loss_detector,
+    nullptr  // No blockage mask plugin for FTX
+  );
 }
 
 PacketDecodeResult HesaiDriver::parse_cloud_packet(const std::vector<uint8_t> & packet)
