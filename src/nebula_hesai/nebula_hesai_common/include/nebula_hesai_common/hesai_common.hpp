@@ -20,6 +20,7 @@
 #include "nebula_core_common/util/string_conversions.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -625,6 +626,12 @@ struct CorrectionV3
   float p2;
   uint8_t m_u8Sha256[32];
 
+  float distortion_func(float theta) const
+  {
+    return theta + k1 * std::pow(theta, 3) + k2 * std::pow(theta, 5) + k3 * std::pow(theta, 7) +
+           k4 * std::pow(theta, 9);
+  }
+
   std::vector<std::vector<float>> generate_pixel_vectors() const
   {
     float phi, phi_rad, alpha_rad;
@@ -652,29 +659,69 @@ struct CorrectionV3
     R[2][1] = sin_a * cos_p;
     R[2][2] = cos_a;
 
+    float theta_th =
+      std::pow(std::pow(std::max(cx, 767.f - cx), 2) + std::pow(std::max(cy, 575.f - cy), 2), 0.5) /
+      f;
+    float tan_theta_th = 750.0 / f;
+
+    int n_interp = 1024;
+    std::vector<float> theta_arr(n_interp, 0.0);
+    std::vector<float> theta_d_arr(n_interp, 0.0);
+    for (int i = 0; i < n_interp; ++i) {
+      theta_arr[i] = i * tan_theta_th / n_interp;
+      theta_d_arr[i] = distortion_func(theta_arr[i]);
+      if (i > 0) {
+        if (theta_d_arr[i] < theta_d_arr[i - 1]) {
+          n_interp = i;
+          break;
+        }
+      }
+    }
+    theta_arr.resize(n_interp);
+    theta_d_arr.resize(n_interp);
+
     std::vector<std::vector<float>> pixel_vectors(
-      m_u16TotalRow * m_u16TotalCol, std::vector<float>(3, 0.0f));
+      m_u16TotalRow * m_u16TotalCol, std::vector<float>(3, 0));
 
-    for (int i = 0; i < m_u16TotalRow; i++) {
-      for (int j = 0; j < m_u16TotalCol; j++) {
-        float img_x = j;
-        float img_y = i;
-        float tan_theta = sqrt(pow((img_x - cx) / f, 2) + pow((img_y - cy) / f, 2));
-        float theta = atan(tan_theta);
+    int init_row = (192 - m_u16TotalRow) >> 1;
+    int init_col = (256 - m_u16TotalCol) >> 1;
 
-        float theta_prime = theta + k1 * std::pow(theta, 3) + k2 * std::pow(theta, 5) +
-                            k3 * std::pow(theta, 7) + k4 * std::pow(theta, 9);
-        float tan_theta_prime = tan(theta_prime);
-        float p_y = (img_x - cx) / f * tan_theta_prime / tan_theta;
-        float p_z = -(img_y - cy) / f * tan_theta_prime / tan_theta;
-        float norm = sqrt(1 + pow(p_y, 2) + pow(p_z, 2));
+    for (int i = init_row; i < m_u16TotalRow + init_row; ++i) {
+      for (int j = init_col; j < (m_u16TotalCol + init_col); ++j) {
+        float x = (j * 3 + 1 - cx) / f;
+        float y = (575 - (i * 3 + 1) - cy) / f;
+        float x1 = x * R[0][0] + y * R[0][1] + 0;
+        float y1 = x * R[1][0] + y * R[1][1] + 0;
+        float z1 = x * R[2][0] + y * R[2][1] + 0;
+        float x2 = -x1 / (z1 - 1);
+        float y2 = -y1 / (z1 - 1);
+        float theta_d = sqrt(pow(x2, 2) + pow(y2, 2));
 
-        float x0 = 1 / norm;
-        float y0 = p_y / norm;
-        float z0 = p_z / norm;
-        pixel_vectors[i * m_u16TotalCol + j][0] = R[0][0] * x0 + R[0][1] * y0 + R[0][2] * z0;
-        pixel_vectors[i * m_u16TotalCol + j][1] = -(R[1][0] * x0 + R[1][1] * y0 + R[1][2] * z0);
-        pixel_vectors[i * m_u16TotalCol + j][2] = R[2][0] * x0 + R[2][1] * y0 + R[2][2] * z0;
+        std::vector<float> pvec = {0, 0, 0};
+        if (theta_d == 0) {
+          pvec = {0.0, 0.0, 1.0};
+        } else if (theta_d > theta_th) {
+          pvec = {0.0, 0.0, 0.0};
+        } else {
+          auto it = std::lower_bound(theta_d_arr.begin(), theta_d_arr.end(), theta_d);
+          int pos = std::distance(theta_d_arr.begin(), it) - 1;
+          if (pos < 0 || pos >= (int)theta_d_arr.size() - 1) {
+            pvec = {0.0, 0.0, 0.0};
+          } else {
+            float theta = (theta_arr[pos + 1] - theta_arr[pos]) /
+                            (theta_d_arr[pos + 1] - theta_d_arr[pos]) *
+                            (theta_d - theta_d_arr[pos]) +
+                          theta_arr[pos];
+            float tan_theta = tan(theta);
+            pvec = {x2, y2, static_cast<float>(sqrt(x2 * x2 + y2 * y2) / tan_theta)};
+            float pvec_norm = sqrt(pow(pvec[0], 2) + pow(pvec[1], 2) + pow(pvec[2], 2));
+            pvec[0] /= pvec_norm;
+            pvec[1] /= pvec_norm;
+            pvec[2] /= pvec_norm;
+          }
+        }
+        pixel_vectors[(i - init_row) * m_u16TotalCol + (j - init_col)] = {
+          pvec[2], -pvec[0], -pvec[1]};
       }
     }
     return pixel_vectors;
@@ -687,7 +734,7 @@ struct CorrectionV3
 struct HesaiCorrectionFTX : public HesaiCalibrationConfiguration
 {
   FT::CorrectionV3 correction_v3_{};
-  std::array<FT::CorrectionDis, FT::FT2_CORRECTION_LEN * FT::FT2_CORRECTION_LEN> corrections_{};
+  std::array<FT::CorrectionDis, FT::FT2_CORRECTION_LEN * FT::FT2_CORRECTION_LEN> xyz_corrections_{};
   bool valid_ = false;
 
   /// @brief Load correction data from byte array downloaded from sensor over TCP
@@ -704,13 +751,13 @@ struct HesaiCorrectionFTX : public HesaiCalibrationConfiguration
         correction_v3_.m_u16TotalCol = FT::FT2_COL_MAX;
         for (int row = 0; row < FT::FT2_ROW_MAX; row++) {
           for (int col = 0; col < FT::FT2_COL_MAX; col++) {
-            corrections_[row * FT::FT2_CORRECTION_LEN + col].x =
+            xyz_corrections_[row * FT::FT2_CORRECTION_LEN + col].x =
               *((const float *)correction_string);
             correction_string += sizeof(float);
-            corrections_[row * FT::FT2_CORRECTION_LEN + col].y =
+            xyz_corrections_[row * FT::FT2_CORRECTION_LEN + col].y =
               *((const float *)correction_string);
             correction_string += sizeof(float);
-            corrections_[row * FT::FT2_CORRECTION_LEN + col].z =
+            xyz_corrections_[row * FT::FT2_CORRECTION_LEN + col].z =
               *((const float *)correction_string);
             correction_string += sizeof(float);
           }
@@ -733,11 +780,11 @@ struct HesaiCorrectionFTX : public HesaiCalibrationConfiguration
     auto pixel_vectors = correction_v3_.generate_pixel_vectors();
     for (int i = 0; i < correction_v3_.m_u16TotalRow; i++) {
       for (int j = 0; j < correction_v3_.m_u16TotalCol; j++) {
-        corrections_[i * FT::FT2_CORRECTION_LEN + j].x =
+        xyz_corrections_[i * FT::FT2_CORRECTION_LEN + j].x =
           pixel_vectors[i * correction_v3_.m_u16TotalCol + j][0];
-        corrections_[i * FT::FT2_CORRECTION_LEN + j].y =
+        xyz_corrections_[i * FT::FT2_CORRECTION_LEN + j].y =
           pixel_vectors[i * correction_v3_.m_u16TotalCol + j][1];
-        corrections_[i * FT::FT2_CORRECTION_LEN + j].z =
+        xyz_corrections_[i * FT::FT2_CORRECTION_LEN + j].z =
           pixel_vectors[i * correction_v3_.m_u16TotalCol + j][2];
       }
     }
@@ -782,9 +829,9 @@ struct HesaiCorrectionFTX : public HesaiCalibrationConfiguration
       if (rowId % 2 == 0 && cloumnId % 2 == 0) {
         rowId /= 2;
         cloumnId /= 2;
-        corrections_[rowId * FT::FT2_CORRECTION_LEN + cloumnId].x = x;
-        corrections_[rowId * FT::FT2_CORRECTION_LEN + cloumnId].y = y;
-        corrections_[rowId * FT::FT2_CORRECTION_LEN + cloumnId].z = z;
+        xyz_corrections_[rowId * FT::FT2_CORRECTION_LEN + cloumnId].x = x;
+        xyz_corrections_[rowId * FT::FT2_CORRECTION_LEN + cloumnId].y = y;
+        xyz_corrections_[rowId * FT::FT2_CORRECTION_LEN + cloumnId].z = z;
         rowIdMax = std::max(rowIdMax, rowId);
         cloumnIdMax = std::max(cloumnIdMax, cloumnId);
       }

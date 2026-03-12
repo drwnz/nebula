@@ -58,12 +58,15 @@ public:
       {
         for (size_t i = 0; i < RowN; i++)  // row
         {
-          const auto & corr = ftx_corrections->corrections_[i * 256 + j]; // ALWAYS stride 256 for FT binary calibration
+          const auto & corr =
+            ftx_corrections
+              ->xyz_corrections_[i * 256 + j];  // ALWAYS stride 256 for FT binary calibration
           auto C = CorrectedAngleData();
 
           // Normalize the input vectors to ensure they are unit vectors.
           // This prevents "stretched" pointclouds if the calibration stores non-normalized vectors.
-          float norm = static_cast<float>(std::sqrt(corr.x * corr.x + corr.y * corr.y + corr.z * corr.z));
+          float norm =
+            static_cast<float>(std::sqrt(corr.x * corr.x + corr.y * corr.y + corr.z * corr.z));
           float cx = corr.x / (norm > 1e-6f ? norm : 1.0f);
           float cy = corr.y / (norm > 1e-6f ? norm : 1.0f);
           float cz = corr.z / (norm > 1e-6f ? norm : 1.0f);
@@ -73,7 +76,7 @@ public:
 
           C.sin_elevation = cz;
           C.cos_elevation = static_cast<float>(std::sqrt(cx * cx + cy * cy));
-          
+
           if (C.cos_elevation > 1e-6f) {
             C.sin_azimuth = cx / C.cos_elevation;
             C.cos_azimuth = cy / C.cos_elevation;
