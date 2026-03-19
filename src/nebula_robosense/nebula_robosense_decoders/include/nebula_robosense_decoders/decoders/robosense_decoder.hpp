@@ -15,13 +15,14 @@
 #pragma once
 
 #include "nebula_robosense_common/robosense_common.hpp"
+#include "nebula_robosense_decoders/decoders/angle_corrector.hpp"
 #include "nebula_robosense_decoders/decoders/robosense_packet.hpp"
 #include "nebula_robosense_decoders/decoders/robosense_scan_decoder.hpp"
 
-#include <rclcpp/rclcpp.hpp>
-
+#include <cstdint>
 #include <memory>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -41,9 +42,9 @@ protected:
   typename SensorT::angle_corrector_t angle_corrector_;
 
   /// @brief The point cloud new points get added to
-  NebulaPointCloudPtr decode_pc_;
+  drivers::NebulaPointCloudPtr decode_pc_;
   /// @brief The point cloud that is returned when a scan is complete
-  NebulaPointCloudPtr output_pc_;
+  drivers::NebulaPointCloudPtr output_pc_;
 
   /// @brief The last decoded packet
   typename SensorT::packet_t packet_;
@@ -148,20 +149,25 @@ protected:
 
         point.return_type = static_cast<uint8_t>(return_type);
 
-        auto corrected_angle_data =
-          angle_corrector_.get_corrected_angle_data(raw_azimuth, channel_id);
-        point.channel = corrected_angle_data.corrected_channel_id;
+        if constexpr (SensorT::has_custom_projection) {
+          sensor_.populate_point_xyz(
+            point, packet_, block_offset + start_block_id, channel_id, angle_corrector_);
+        } else {
+          auto corrected_angle_data =
+            angle_corrector_.get_corrected_angle_data(raw_azimuth, channel_id);
+          point.channel = corrected_angle_data.corrected_channel_id;
 
-        // The raw_azimuth and channel are only used as indices, sin/cos functions use the precise
-        // corrected angles
-        float xyDistance = distance * corrected_angle_data.cos_elevation;
-        point.x = xyDistance * corrected_angle_data.cos_azimuth;
-        point.y = -xyDistance * corrected_angle_data.sin_azimuth;
-        point.z = distance * corrected_angle_data.sin_elevation;
+          // The raw_azimuth and channel are only used as indices, sin/cos functions use the precise
+          // corrected angles
+          float xyDistance = distance * corrected_angle_data.cos_elevation;
+          point.x = xyDistance * corrected_angle_data.cos_azimuth;
+          point.y = -xyDistance * corrected_angle_data.sin_azimuth;
+          point.z = distance * corrected_angle_data.sin_elevation;
 
-        // The driver wrapper converts to degrees, expects radians
-        point.azimuth = corrected_angle_data.azimuth_rad;
-        point.elevation = corrected_angle_data.elevation_rad;
+          // The driver wrapper converts to degrees, expects radians
+          point.azimuth = corrected_angle_data.azimuth_rad;
+          point.elevation = corrected_angle_data.elevation_rad;
+        }
 
         decode_pc_->emplace_back(point);
       }
@@ -189,13 +195,14 @@ protected:
   /// @param packet_timestamp_ns The timestamp of the current MsopPacket in nanoseconds
   /// @param block_id The block index of the point
   /// @param channel_id The channel index of the point
-  uint32_t get_point_time_relative(uint64_t packet_timestamp_ns, size_t block_id, size_t channel_id)
+  uint32_t get_point_time_relative(
+    uint64_t packet_timestamp_ns, size_t absolute_block_id, size_t channel_id)
   {
-    auto point_to_packet_offset_ns =
-      sensor_.get_packet_relative_point_time_offset(block_id, channel_id, sensor_configuration_);
+    const int32_t relative_time_ns = sensor_.get_packet_relative_point_time_offset(
+      packet_, absolute_block_id, channel_id, sensor_configuration_);
     auto packet_to_scan_offset_ns =
       static_cast<uint32_t>(packet_timestamp_ns - decode_scan_timestamp_ns_);
-    return packet_to_scan_offset_ns + point_to_packet_offset_ns;
+    return packet_to_scan_offset_ns + relative_time_ns;
   }
 
 public:
@@ -213,8 +220,8 @@ public:
     logger_.set_level(rclcpp::Logger::Level::Debug);
     RCLCPP_INFO_STREAM(logger_, sensor_configuration_);
 
-    decode_pc_.reset(new NebulaPointCloud);
-    output_pc_.reset(new NebulaPointCloud);
+    decode_pc_.reset(new drivers::NebulaPointCloud);
+    output_pc_.reset(new drivers::NebulaPointCloud);
 
     decode_pc_->reserve(SensorT::max_scan_buffer_points);
     output_pc_->reserve(SensorT::max_scan_buffer_points);
@@ -258,9 +265,9 @@ public:
         // A new scan starts within the current packet, so the new scan's timestamp must be
         // calculated as the packet timestamp plus the lowest time offset of any point in the
         // remainder of the packet
-        decode_scan_timestamp_ns_ =
-          robosense_packet::get_timestamp_ns(packet_) +
-          sensor_.get_earliest_point_time_offset_for_block(block_id, sensor_configuration_);
+        decode_scan_timestamp_ns_ = robosense_packet::get_timestamp_ns(packet_) +
+                                    sensor_.get_earliest_point_time_offset_for_block(
+                                      packet_, block_id, sensor_configuration_);
       }
 
       convert_returns(block_id, n_returns);

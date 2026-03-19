@@ -259,7 +259,8 @@ public:
   static constexpr size_t max_scan_buffer_points = 1152000;
 
   int get_packet_relative_point_time_offset(
-    const uint32_t block_id, const uint32_t channel_id,
+    const robosense_packet::helios::Packet & /*packet*/, const uint32_t block_id,
+    const uint32_t channel_id,
     const std::shared_ptr<const RobosenseSensorConfiguration> & sensor_configuration) override
   {
     if (sensor_configuration->return_mode == ReturnMode::DUAL)

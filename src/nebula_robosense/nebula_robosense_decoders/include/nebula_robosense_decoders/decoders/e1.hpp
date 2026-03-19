@@ -14,14 +14,17 @@
 
 #pragma once
 
+#include "nebula_robosense_decoders/decoders/angle_corrector.hpp"
 #include "nebula_robosense_decoders/decoders/robosense_packet.hpp"
 #include "nebula_robosense_decoders/decoders/robosense_sensor_directional.hpp"
 
 #include "boost/endian/buffers.hpp"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 
 using namespace boost::endian;  // NOLINT(build/namespaces)
@@ -113,7 +116,20 @@ struct InfoPacket
 
 #pragma pack(pop)
 }  // namespace robosense_packet::e1
+}  // namespace nebula::drivers
 
+namespace nebula::drivers::robosense_packet
+{
+/// @brief Specialization for E1 as it doesn't have range_resolution in header
+template <>
+inline double get_dis_unit<e1::Packet>(const e1::Packet &)
+{
+  return 0.005;
+}
+}  // namespace nebula::drivers::robosense_packet
+
+namespace nebula::drivers
+{
 class E1
 : public RobosenseSensorDirectional<robosense_packet::e1::Packet, robosense_packet::e1::InfoPacket>
 {
@@ -131,7 +147,12 @@ private:
   static constexpr uint8_t return_mode_nearest_farthest = 0x0A;
   static constexpr uint8_t return_mode_strongest_2nd = 0x0B;
 
+  static constexpr int VECTOR_BASE = 32768;
+
 public:
+  static constexpr bool has_custom_projection = true;
+  typedef AngleCorrector angle_corrector_t;
+
   static constexpr float min_range = 0.2f;
   static constexpr float max_range = 200.f;
   static constexpr size_t max_scan_buffer_points = 260000;
@@ -185,6 +206,38 @@ public:
     sensor_info["msop_dst_port"] = std::to_string(info_packet.msop_remote_port.value());
     sensor_info["difop_dst_port"] = std::to_string(info_packet.difop_remote_port.value());
     return sensor_info;
+  }
+
+  int get_packet_relative_point_time_offset(
+    const robosense_packet::e1::Packet & packet, const uint32_t block_id,
+    const uint32_t /*channel_id*/,
+    const std::shared_ptr<const RobosenseSensorConfiguration> & /*sensor_configuration*/) override
+  {
+    return static_cast<int>(packet.body.blocks[block_id].time_offset.value()) * 1000;
+  }
+
+  template <typename CorrectorT>
+  void populate_point_xyz(
+    ::nebula::drivers::NebulaPoint & point, const robosense_packet::e1::Packet & pkt,
+    uint32_t block_id, uint32_t channel_id, CorrectorT & /*angle_corrector*/)
+  {
+    const auto & unit = pkt.body.blocks[block_id].units[channel_id];
+
+    // E1 provides x, y, z direction vectors
+    int16_t vx = unit.x.value();
+    int16_t vy = unit.y.value();
+    int16_t vz = unit.z.value();
+
+    // distance is already in point.distance (from get_distance call in decoder)
+    // Formula: x = vx * distance / VECTOR_BASE
+    point.x = static_cast<float>(vx) * point.distance / static_cast<float>(VECTOR_BASE);
+    point.y = static_cast<float>(vy) * point.distance / static_cast<float>(VECTOR_BASE);
+    point.z = static_cast<float>(vz) * point.distance / static_cast<float>(VECTOR_BASE);
+
+    // azimuth/elevation can be derived if needed, but NebulaPoint mainly uses x,y,z
+    point.azimuth = atan2f(point.y, point.x);
+    point.elevation = asinf(point.z / point.distance);
+    point.channel = static_cast<uint16_t>(channel_id);
   }
 };
 }  // namespace nebula::drivers

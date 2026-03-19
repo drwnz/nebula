@@ -178,14 +178,9 @@ void RobosenseRosWrapper::receive_info_packet_callback(std::vector<uint8_t> & pa
 
   if (info_packets_pub_) {
     robosense_msgs::msg::RobosenseInfoPacket info_packet{};
-    if (packet.size() != info_packet.packet.data.size()) {
-      RCLCPP_ERROR_THROTTLE(
-        get_logger(), *get_clock(), 1000, "Could not publish info packet: size unsupported");
-    } else {
-      std::copy(packet.cbegin(), packet.cend(), info_packet.packet.data.begin());
-      info_packet.packet.stamp = now();
-      info_packets_pub_->publish(info_packet);
-    }
+    info_packet.packet.data = packet;
+    info_packet.packet.stamp = now();
+    info_packets_pub_->publish(info_packet);
   }
 
   auto status = info_driver_->decode_info_packet(packet);
@@ -245,7 +240,9 @@ void RobosenseRosWrapper::receive_info_packet_callback(std::vector<uint8_t> & pa
       }
     }
 
-    new_cfg.return_mode = sensor_return_mode;
+    if (sensor_return_mode != drivers::ReturnMode::UNKNOWN) {
+      new_cfg.return_mode = sensor_return_mode;
+    }
     new_cfg.use_sensor_time = info_driver_->get_sync_status();
 
     // Report time sync status once on startup

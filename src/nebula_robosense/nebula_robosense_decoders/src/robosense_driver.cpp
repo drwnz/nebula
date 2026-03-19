@@ -23,10 +23,10 @@ RobosenseDriver::RobosenseDriver(
   const std::shared_ptr<const RobosenseCalibrationConfiguration> & calibration_configuration)
 {
   // Initialize proper parser from cloud config's model and echo mode
-  driver_status_ = nebula::Status::OK;
+  driver_status_ = ::nebula::Status::OK;
   switch (sensor_configuration->sensor_model) {
     case SensorModel::UNKNOWN:
-      driver_status_ = nebula::Status::INVALID_SENSOR_MODEL;
+      driver_status_ = ::nebula::Status::INVALID_SENSOR_MODEL;
       break;
     case SensorModel::ROBOSENSE_BPEARL_V3:
       scan_decoder_.reset(
@@ -53,7 +53,7 @@ RobosenseDriver::RobosenseDriver(
         new RobosenseDecoderDirectional<EMX>(sensor_configuration, calibration_configuration));
       break;
     default:
-      driver_status_ = nebula::Status::NOT_INITIALIZED;
+      driver_status_ = ::nebula::Status::NOT_INITIALIZED;
       throw std::runtime_error("Driver not Implemented for selected sensor.");
   }
 }
@@ -77,7 +77,7 @@ std::tuple<drivers::NebulaPointCloudPtr, double> RobosenseDriver::parse_cloud_pa
   std::tuple<drivers::NebulaPointCloudPtr, double> pointcloud;
   auto logger = rclcpp::get_logger("RobosenseDriver");
 
-  if (driver_status_ != nebula::Status::OK) {
+  if (driver_status_ != ::nebula::Status::OK) {
     RCLCPP_ERROR(logger, "Driver not OK.");
     return pointcloud;
   }

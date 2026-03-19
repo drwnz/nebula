@@ -14,15 +14,18 @@
 
 #pragma once
 
+#include "nebula_core_common/nebula_common.hpp"
 #include "nebula_robosense_decoders/decoders/robosense_packet.hpp"
 #include "nebula_robosense_decoders/decoders/robosense_sensor_directional.hpp"
 
-#include "boost/endian/buffers.hpp"
+#include <boost/endian/buffers.hpp>
 
-#include <cstddef>
+#include <cmath>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
+#include <vector>
 
 using namespace boost::endian;  // NOLINT(build/namespaces)
 
@@ -34,50 +37,57 @@ namespace robosense_packet::emx
 
 struct Header
 {
-  big_uint32_buf_t header_id;
-  big_uint16_buf_t pkt_seq;
-  big_uint16_buf_t protocol_version;
-  big_uint8_buf_t return_mode;
-  big_uint8_buf_t time_mode;
-  Timestamp timestamp;
-  uint8_t reserved[10];
-  big_uint8_buf_t lidar_type;
-  big_uint8_buf_t temperature;
+  big_uint32_buf_t header_id;         // 0
+  big_uint16_buf_t pkt_seq;           // 4
+  big_uint16_buf_t protocol_version;  // 6
+  big_uint8_buf_t return_mode;        // 8
+  big_uint8_buf_t time_mode;          // 9
+  Timestamp timestamp;                // 10
+  uint8_t reserved[10];               // 20
+  big_uint8_buf_t lidar_type;         // 30
+  big_uint8_buf_t temperature;        // 31
 };
 
 struct Unit
 {
-  big_uint16_buf_t distance;
-  big_uint16_buf_t radius_sd;
-  big_int16_buf_t x;
-  big_int16_buf_t y;
-  big_int16_buf_t z;
-  big_uint8_buf_t reflectivity;
-  big_uint8_buf_t intensity_sd;
-  big_uint8_buf_t point_attribute;
+  big_uint16_buf_t distance;        // 0 (radius_ft)
+  big_uint16_buf_t radius_sd;       // 2
+  big_int16_buf_t x;                // 4
+  big_int16_buf_t y;                // 6
+  big_int16_buf_t z;                // 8
+  big_uint8_buf_t reflectivity;     // 10 (intensity_ft)
+  big_uint8_buf_t intensity_sd;     // 11
+  big_uint8_buf_t point_attribute;  // 12
 };
 
 struct Block
 {
   typedef Unit unit_t;
-  big_uint8_buf_t time_offset;
-  Unit units[2];
+  uint8_t time_offset;  // 0
+  Unit units[2];        // 1 (Total 27 bytes per block)
 };
 
 struct Body
 {
   typedef Block block_t;
-  Block blocks[50];
+  Block blocks[50];  // Total 1350 bytes
 };
 
-struct Packet : public PacketBase<2, 50, 2, 2>
+struct Footer
 {
-  typedef Body body_t;
-  Header header;
-  body_t body;
   uint8_t reserved[16];
-  uint8_t crc32[4];
-  uint8_t rolling_counter[2];
+  big_uint32_buf_t crc32;
+  big_uint16_buf_t rolling_counter;
+};
+
+struct Packet : public robosense_packet::PacketBase<50, 2, 1, 1>
+{
+  typedef robosense_packet::Body<
+    robosense_packet::Block<Unit, Packet::n_channels>, Packet::n_blocks>
+    body_t;
+  Header header;
+  Body body;
+  Footer footer;
 };
 
 struct InfoPacket
@@ -126,6 +136,16 @@ struct InfoPacket
 #pragma pack(pop)
 }  // namespace robosense_packet::emx
 
+namespace robosense_packet
+{
+/// @brief Specialization for EMX as it doesn't have range_resolution in header
+template <>
+inline double get_dis_unit<robosense_packet::emx::Packet>(const robosense_packet::emx::Packet &)
+{
+  return 0.005;
+}
+}  // namespace robosense_packet
+
 class EMX : public RobosenseSensorDirectional<
               robosense_packet::emx::Packet, robosense_packet::emx::InfoPacket>
 {
@@ -136,13 +156,17 @@ private:
   static constexpr uint8_t sync_mode_gptp_flag = 0x03;
   static constexpr uint8_t sync_mode_p2p_flag = 0x04;
 
-  // EMX DIFOP wave mode byte values (from user manual)
+  // EMX DIFOP wave mode byte values
   static constexpr uint8_t wave_mode_nearest_farthest = 0x00;
   static constexpr uint8_t wave_mode_strongest = 0x04;
   static constexpr uint8_t wave_mode_farthest = 0x05;
   static constexpr uint8_t wave_mode_nearest = 0x06;
 
+  static constexpr int VECTOR_BASE = 32768;
+
 public:
+  static constexpr bool has_custom_projection = true;
+  typedef AngleCorrector angle_corrector_t;
   static constexpr float min_range = 0.2f;
   static constexpr float max_range = 200.f;
   static constexpr size_t max_scan_buffer_points = 288000;
@@ -161,6 +185,17 @@ public:
       default:
         return ReturnMode::UNKNOWN;
     }
+  }
+
+  RobosenseCalibrationConfiguration get_sensor_calibration(
+    const robosense_packet::emx::InfoPacket & /*info_packet*/) override
+  {
+    return {};
+  }
+
+  bool get_sync_status(const robosense_packet::emx::InfoPacket & info_packet) override
+  {
+    return info_packet.time_sync_status.value() == 0x01;
   }
 
   std::map<std::string, std::string> get_sensor_info(
@@ -199,5 +234,38 @@ public:
     sensor_info["difop_dst_port"] = std::to_string(info_packet.difop1_dst_port.value());
     return sensor_info;
   }
+
+  int get_packet_relative_point_time_offset(
+    const robosense_packet::emx::Packet & packet, const uint32_t block_id,
+    const uint32_t /*channel_id*/,
+    const std::shared_ptr<const RobosenseSensorConfiguration> & /*sensor_configuration*/) override
+  {
+    return static_cast<int>(packet.body.blocks[block_id].time_offset) * 1000;
+  }
+
+  template <typename CorrectorT>
+  void populate_point_xyz(
+    ::nebula::drivers::NebulaPoint & point, const robosense_packet::emx::Packet & pkt,
+    uint32_t block_id, uint32_t channel_id, CorrectorT & /*angle_corrector*/)
+  {
+    const auto & unit = pkt.body.blocks[block_id].units[channel_id];
+
+    // RSMX provides x, y, z direction vectors
+    int16_t vx = unit.x.value();
+    int16_t vy = unit.y.value();
+    int16_t vz = unit.z.value();
+
+    // distance is already in point.distance (from get_distance call in decoder)
+    // Formula: x = vx * distance / VECTOR_BASE
+    point.x = static_cast<float>(vx) * point.distance / static_cast<float>(VECTOR_BASE);
+    point.y = static_cast<float>(vy) * point.distance / static_cast<float>(VECTOR_BASE);
+    point.z = static_cast<float>(vz) * point.distance / static_cast<float>(VECTOR_BASE);
+
+    // azimuth/elevation can be derived if needed, but NebulaPoint mainly uses x,y,z
+    point.azimuth = atan2f(point.y, point.x);
+    point.elevation = asinf(point.z / point.distance);
+    point.channel = static_cast<uint16_t>(channel_id);
+  }
 };
+
 }  // namespace nebula::drivers

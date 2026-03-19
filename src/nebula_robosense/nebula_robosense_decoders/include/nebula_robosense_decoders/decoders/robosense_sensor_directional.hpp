@@ -51,7 +51,7 @@ class RobosenseSensorDirectional : public RobosenseSensor<PacketT, InfoPacketT>
 {
 public:
   int get_packet_relative_point_time_offset(
-    const uint32_t /*block_id*/, const uint32_t /*channel_id*/,
+    const PacketT & /*packet*/, const uint32_t /*block_id*/, const uint32_t /*channel_id*/,
     const std::shared_ptr<const RobosenseSensorConfiguration> & /*sensor_configuration*/) override
   {
     // Directional sensors embed time offsets per-block. The decoder handles this directly.
@@ -72,17 +72,7 @@ public:
     return RobosenseCalibrationConfiguration();
   }
 
-  bool get_sync_status(const InfoPacketT & info_packet) override
-  {
-    switch (info_packet.time_sync_status.value()) {
-      case DirectionalSyncStatusFlags::success:
-        return true;
-      case DirectionalSyncStatusFlags::failed:
-      case DirectionalSyncStatusFlags::timeout:
-      default:
-        return false;
-    }
-  }
+  bool get_sync_status(const InfoPacketT & /*info_packet*/) override { return false; }
 
   /// @brief Helper to populate common sync status info fields
   /// @param sensor_info The map to populate
