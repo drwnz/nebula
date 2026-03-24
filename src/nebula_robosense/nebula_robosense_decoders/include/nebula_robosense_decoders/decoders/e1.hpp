@@ -150,7 +150,7 @@ private:
   static constexpr int VECTOR_BASE = 32768;
 
 public:
-  static constexpr bool has_custom_projection = true;
+  static constexpr bool has_custom_projection = false;
   typedef AngleCorrector angle_corrector_t;
 
   static constexpr float min_range = 0.2f;

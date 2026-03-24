@@ -34,6 +34,26 @@ namespace nebula::drivers
 /// @brief Decoder for directional Robosense sensors (E1, EMX, EM4) that use packet-sequence-based
 /// frame splitting and either direction vectors or DIFOP2 calibration for point coordinates.
 /// @tparam SensorT The sensor definition type
+template <typename T, bool HasCustom>
+struct AngleCorrectorFactory
+{
+  static std::shared_ptr<T> create(
+    const std::shared_ptr<const RobosenseCalibrationConfiguration> & /*calib*/)
+  {
+    return nullptr;
+  }
+};
+
+template <typename T>
+struct AngleCorrectorFactory<T, true>
+{
+  static std::shared_ptr<T> create(
+    const std::shared_ptr<const RobosenseCalibrationConfiguration> & calib)
+  {
+    return std::make_shared<T>(calib);
+  }
+};
+
 template <typename SensorT>
 class RobosenseDecoderDirectional : public RobosenseScanDecoder
 {
@@ -61,6 +81,9 @@ protected:
 
   /// @brief The previous packet sequence number, used for frame boundary detection
   uint16_t prev_pkt_seq_{0};
+
+  /// @brief Angle corrector
+  std::shared_ptr<typename SensorT::angle_corrector_t> angle_corrector_;
 
   /// @brief Distance resolution in meters (5mm for E1/EMX/EM4)
   static constexpr float distance_resolution_m_ = 0.005f;
@@ -125,7 +148,13 @@ protected:
                                              : static_cast<uint8_t>(ReturnType::STRONGEST);
           point.channel = static_cast<uint16_t>(chan);
           point.time_stamp = packet_to_scan_offset_ns;
-          populate_point_xyz(point, unit, dist);
+          if constexpr (SensorT::has_custom_projection) {
+            sensor_.populate_point_xyz(
+              point, packet_, static_cast<uint32_t>(blk), static_cast<uint32_t>(chan),
+              *angle_corrector_);
+          } else {
+            populate_point_xyz(point, unit, dist);
+          }
           decode_pc_->emplace_back(point);
         }
 
@@ -154,7 +183,13 @@ protected:
     point.return_type = static_cast<uint8_t>(ReturnType::SECONDSTRONGEST);
     point.channel = static_cast<uint16_t>(chan);
     point.time_stamp = time_stamp_ns;
-    populate_point_xyz(point, unit, dist_sd);
+    if constexpr (SensorT::has_custom_projection) {
+      sensor_.populate_point_xyz(
+        point, packet_, static_cast<uint32_t>(chan), static_cast<uint32_t>(chan),
+        *angle_corrector_);
+    } else {
+      populate_point_xyz(point, unit, dist_sd);
+    }
     decode_pc_->emplace_back(point);
   }
 
@@ -197,11 +232,14 @@ public:
   /// @param calibration_configuration Calibration (unused for directional sensors, kept for API)
   explicit RobosenseDecoderDirectional(
     const std::shared_ptr<const RobosenseSensorConfiguration> & sensor_configuration,
-    const std::shared_ptr<
-      const RobosenseCalibrationConfiguration> & /* calibration_configuration */)
+    const std::shared_ptr<const RobosenseCalibrationConfiguration> & calibration_configuration)
   : sensor_configuration_(sensor_configuration),
     logger_(rclcpp::get_logger("RobosenseDecoderDirectional"))
   {
+    angle_corrector_ =
+      AngleCorrectorFactory<typename SensorT::angle_corrector_t, SensorT::has_custom_projection>::
+        create(calibration_configuration);
+
     logger_.set_level(rclcpp::Logger::Level::Debug);
     RCLCPP_INFO_STREAM(logger_, sensor_configuration_);
 

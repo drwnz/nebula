@@ -62,13 +62,13 @@ struct Unit
 struct Block
 {
   typedef Unit unit_t;
-  Unit units[260];
+  Unit units[1];
 };
 
 struct Body
 {
   typedef Block block_t;
-  Block blocks[1];
+  Block blocks[260];
 };
 
 struct Footer
@@ -78,10 +78,10 @@ struct Footer
   big_uint32_buf_t tail;                  // 1080
 };
 
-struct Packet : public robosense_packet::PacketBase<40, 32, 2, 520>
+struct Packet : public robosense_packet::PacketBase<260, 1, 2, 520>
 {
   typedef robosense_packet::Body<
-    robosense_packet::Block<robosense_packet::Unit, Packet::n_channels>, Packet::n_blocks>
+    robosense_packet::Block<Unit, Packet::n_channels>, Packet::n_blocks>
     body_t;
   Header header;
   body_t body;
@@ -305,20 +305,27 @@ public:
   template <typename CorrectorT>
   void populate_point_xyz(
     ::nebula::drivers::NebulaPoint & point, const robosense_packet::em4::Packet & pkt,
-    uint32_t /*block_id*/, uint32_t channel_id, CorrectorT & angle_corrector)
+    uint32_t block_id, uint32_t /*channel_id*/, CorrectorT & angle_corrector)
   {
-    // Mirror ID from header
-    uint8_t mirror_id = pkt.header.mirror_id.value();
-    // Yaw from header
+    uint8_t mirror_id = pkt.header.mirror_id.value() - 1;
+    if (mirror_id > 3) mirror_id = 0;
+
     int16_t raw_yaw = pkt.header.yaw_angle.value();
 
-    auto corrected_data =
-      angle_corrector.get_corrected_angle_data_em4(raw_yaw, channel_id, mirror_id);
+    uint16_t pkt_seq = pkt.header.pkt_seq.value() - 1;
+    bool is_dual_mode = (pkt.header.return_mode.value() == 0);
+    const uint16_t seq_mod = is_dual_mode ? (pkt_seq % 4) : (pkt_seq % 2);
 
-    // x = r * cos(pitch) * cos(yaw)
-    // y = r * cos(pitch) * sin(yaw)
-    // z = r * sin(pitch)
-    // Mapping to Nebula: x=forward(X), y=left(-Y), z=up(Z)
+    uint16_t real_chan;
+    if (is_dual_mode) {
+      real_chan = static_cast<uint16_t>(block_id / 2) + seq_mod * 130;
+    } else {
+      real_chan = static_cast<uint16_t>(block_id + seq_mod * 260);
+    }
+
+    auto corrected_data =
+      angle_corrector.get_corrected_angle_data_em4(raw_yaw, real_chan, mirror_id);
+
     float xy_dist = point.distance * corrected_data.cos_elevation;
     point.x = xy_dist * corrected_data.cos_azimuth;
     point.y = -xy_dist * corrected_data.sin_azimuth;
@@ -326,6 +333,7 @@ public:
 
     point.azimuth = corrected_data.azimuth_rad;
     point.elevation = corrected_data.elevation_rad;
+    point.channel = static_cast<uint16_t>(real_chan);
   }
 };
 

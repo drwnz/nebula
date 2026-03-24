@@ -5,8 +5,8 @@
     data_port: 6699
     gnss_port: 7788
     packet_mtu_size: 1500
-    launch_hw: true
-    setup_sensor: true
+    launch_hw: false
+    setup_sensor: false
     frame_id: robosense
     diag_span: 1000
     dual_return_distance_threshold: 0.1

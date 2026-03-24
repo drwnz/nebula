@@ -59,6 +59,52 @@ public:
   bool get_sync_status() override { return sensor_.get_sync_status(packet_); }
 };
 
+// RobosenseInfoDecoder specialization for EMX to handle 256-byte DIFOP
+template <>
+class RobosenseInfoDecoder<EMX> : public RobosenseInfoDecoderBase
+{
+protected:
+  EMX sensor_{};
+  robosense_packet::emx::CombinedInfo packet_{};
+  rclcpp::Logger logger_;
+
+public:
+  RobosenseInfoDecoder() : logger_(rclcpp::get_logger("RobosenseInfoDecoderEMX"))
+  {
+    logger_.set_level(rclcpp::Logger::Level::Debug);
+  }
+
+  bool parse_packet(const std::vector<uint8_t> & raw_packet) override
+  {
+    if (raw_packet.size() == 654) {  // DIFOP1 (New)
+      std::memcpy(&packet_.packet1, raw_packet.data(), sizeof(robosense_packet::emx::InfoPacket));
+      packet_.packet1_received = true;
+      return true;
+    } else if (raw_packet.size() == 500) {  // DIFOP2 (New)
+      std::memcpy(&packet_.packet2, raw_packet.data(), sizeof(robosense_packet::emx::InfoPacket2));
+      packet_.packet2_received = true;
+      return true;
+    } else if (raw_packet.size() == 256) {  // Standard DIFOP
+      std::memcpy(
+        &packet_.packet256, raw_packet.data(), sizeof(robosense_packet::emx::InfoPacket256));
+      packet_.packet256_received = true;
+      return true;
+    }
+    return false;
+  }
+
+  std::map<std::string, std::string> get_sensor_info() override
+  {
+    return sensor_.get_sensor_info(packet_);
+  }
+  ReturnMode get_return_mode() override { return sensor_.get_return_mode(packet_); }
+  RobosenseCalibrationConfiguration get_sensor_calibration() override
+  {
+    return sensor_.get_sensor_calibration(packet_);
+  }
+  bool get_sync_status() override { return sensor_.get_sync_status(packet_); }
+};
+
 RobosenseInfoDriver::RobosenseInfoDriver(
   const std::shared_ptr<const RobosenseSensorConfiguration> & sensor_configuration)
 {
