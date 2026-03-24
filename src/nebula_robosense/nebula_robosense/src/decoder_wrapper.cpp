@@ -36,9 +36,9 @@ RobosenseDecoderWrapper::RobosenseDecoderWrapper(
 
   // Publish packets only if HW interface is connected
   if (hw_interface_) {
-    current_scan_msg_ = std::make_unique<robosense_msgs::msg::RobosenseScan>();
-    packets_pub_ = parent_node->create_publisher<robosense_msgs::msg::RobosenseScan>(
-      "robosense_packets", rclcpp::SensorDataQoS());
+    current_scan_msg_ = std::make_unique<nebula_msgs::msg::NebulaPackets>();
+    packets_pub_ = parent_node->create_publisher<nebula_msgs::msg::NebulaPackets>(
+      "/robosense_packets", rclcpp::SensorDataQoS());
   }
 
   auto qos_profile = rmw_qos_profile_sensor_data;
@@ -69,16 +69,13 @@ void RobosenseDecoderWrapper::process_cloud_packet(
 {
   // Accumulate packets for recording only if someone is subscribed to the topic (for performance)
   if (
-    hw_interface_ && (packets_pub_->get_subscription_count() > 0 ||
-                      packets_pub_->get_intra_process_subscription_count() > 0)) {
+    packets_pub_ && (packets_pub_->get_subscription_count() > 0 ||
+                     packets_pub_->get_intra_process_subscription_count() > 0)) {
     if (current_scan_msg_->packets.size() == 0) {
       current_scan_msg_->header.stamp = packet_msg->stamp;
     }
 
-    robosense_msgs::msg::RobosensePacket robosense_packet_msg{};
-    robosense_packet_msg.stamp = packet_msg->stamp;
-    std::copy(packet_msg->data.begin(), packet_msg->data.end(), robosense_packet_msg.data.begin());
-    current_scan_msg_->packets.emplace_back(std::move(robosense_packet_msg));
+    current_scan_msg_->packets.emplace_back(*packet_msg);
   }
 
   std::tuple<nebula::drivers::NebulaPointCloudPtr, double> pointcloud_ts{};
@@ -99,7 +96,8 @@ void RobosenseDecoderWrapper::process_cloud_packet(
   // Publish scan message only if it has been written to
   if (current_scan_msg_ && !current_scan_msg_->packets.empty()) {
     packets_pub_->publish(std::move(current_scan_msg_));
-    current_scan_msg_ = std::make_unique<robosense_msgs::msg::RobosenseScan>();
+    current_scan_msg_ = std::make_unique<nebula_msgs::msg::NebulaPackets>();
+    current_scan_msg_->header.frame_id = sensor_cfg_->frame_id;
   }
 
   if (

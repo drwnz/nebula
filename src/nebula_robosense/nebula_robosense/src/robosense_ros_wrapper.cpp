@@ -59,11 +59,11 @@ RobosenseRosWrapper::RobosenseRosWrapper(const rclcpp::NodeOptions & options)
       std::bind(&RobosenseRosWrapper::receive_info_packet_callback, this, std::placeholders::_1));
     stream_start();
   } else {
-    packets_sub_ = create_subscription<robosense_msgs::msg::RobosenseScan>(
-      "robosense_packets", rclcpp::SensorDataQoS(),
+    packets_sub_ = create_subscription<nebula_msgs::msg::NebulaPackets>(
+      "/robosense_packets", rclcpp::SensorDataQoS(),
       std::bind(&RobosenseRosWrapper::receive_scan_message_callback, this, std::placeholders::_1));
     info_packets_sub_ = create_subscription<robosense_msgs::msg::RobosenseInfoPacket>(
-      "robosense_info_packets", 10, [this](const robosense_msgs::msg::RobosenseInfoPacket & msg) {
+      "/robosense_info_packets", 10, [this](const robosense_msgs::msg::RobosenseInfoPacket & msg) {
         std::vector<uint8_t> raw_packet(msg.packet.data.begin(), msg.packet.data.end());
         receive_info_packet_callback(raw_packet);
       });
@@ -71,6 +71,24 @@ RobosenseRosWrapper::RobosenseRosWrapper(const rclcpp::NodeOptions & options)
       get_logger(), "Hardware connection disabled, listening for packets on "
                       << packets_sub_->get_topic_name() << " and "
                       << info_packets_sub_->get_topic_name());
+
+    // Initialize decoder wrapper with default calibration if in replay mode
+    auto calib = drivers::RobosenseCalibrationConfiguration();
+    if (sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_EMX) {
+      calib.set_channel_size(192);
+    } else if (sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_EM4) {
+      calib.set_channel_size(520);
+    } else if (sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_E1) {
+      calib.set_channel_size(128);
+    } else {
+      calib.set_channel_size(128);  // Fallback for others
+    }
+
+    auto calib_ptr =
+      std::make_shared<const nebula::drivers::RobosenseCalibrationConfiguration>(std::move(calib));
+    decoder_wrapper_.emplace(this, nullptr, sensor_cfg_ptr_, calib_ptr);
+    RCLCPP_INFO_STREAM(
+      get_logger(), "Initialized decoder wrapper for replay: " << decoder_wrapper_->status());
   }
 
   // Register parameter callback after all params have been declared. Otherwise it would be called
@@ -146,12 +164,16 @@ Status RobosenseRosWrapper::validate_and_set_config(
 }
 
 void RobosenseRosWrapper::receive_scan_message_callback(
-  std::unique_ptr<robosense_msgs::msg::RobosenseScan> scan_msg)
+  nebula_msgs::msg::NebulaPackets::UniquePtr scan_msg)
 {
+  RCLCPP_DEBUG_STREAM(
+    get_logger(),
+    "Received NebulaPackets message with " << scan_msg->packets.size() << " packets.");
+
   if (hw_interface_wrapper_) {
     RCLCPP_ERROR_THROTTLE(
       get_logger(), *get_clock(), 1000,
-      "Ignoring received RobosenseScan. Launch with launch_hw:=false to enable RobosenseScan "
+      "Ignoring received NebulaPackets. Launch with launch_hw:=false to enable NebulaPackets "
       "replay.");
     return;
   }
@@ -161,9 +183,7 @@ void RobosenseRosWrapper::receive_scan_message_callback(
   }
 
   for (auto & pkt : scan_msg->packets) {
-    auto nebula_pkt_ptr = std::make_unique<nebula_msgs::msg::NebulaPacket>();
-    nebula_pkt_ptr->stamp = pkt.stamp;
-    std::copy(pkt.data.begin(), pkt.data.end(), std::back_inserter(nebula_pkt_ptr->data));
+    auto nebula_pkt_ptr = std::make_unique<nebula_msgs::msg::NebulaPacket>(pkt);
 
     decoder_wrapper_->process_cloud_packet(std::move(nebula_pkt_ptr));
   }

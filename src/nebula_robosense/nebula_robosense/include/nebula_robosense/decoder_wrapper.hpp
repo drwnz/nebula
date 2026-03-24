@@ -24,7 +24,7 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <nebula_msgs/msg/nebula_packet.hpp>
-#include <robosense_msgs/msg/robosense_scan.hpp>
+#include <nebula_msgs/msg/nebula_packets.hpp>
 
 #include <chrono>
 #include <memory>
@@ -72,8 +72,8 @@ private:
   std::shared_ptr<drivers::RobosenseDriver> driver_ptr_;
   std::mutex mtx_driver_ptr_;
 
-  rclcpp::Publisher<robosense_msgs::msg::RobosenseScan>::SharedPtr packets_pub_{};
-  robosense_msgs::msg::RobosenseScan::UniquePtr current_scan_msg_{};
+  rclcpp::Publisher<nebula_msgs::msg::NebulaPackets>::SharedPtr packets_pub_{};
+  nebula_msgs::msg::NebulaPackets::UniquePtr current_scan_msg_{};
 
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr nebula_points_pub_{};
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr aw_points_ex_pub_{};
