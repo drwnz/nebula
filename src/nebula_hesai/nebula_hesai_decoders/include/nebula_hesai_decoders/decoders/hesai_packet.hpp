@@ -89,6 +89,24 @@ struct SecondsSinceEpoch
   }
 };
 
+struct Header25B
+{
+  uint16_t sop;
+  uint8_t protocol_major;
+  uint8_t protocol_minor;
+  uint8_t time_division_multiplexing_version;
+  uint8_t reserved1;
+  uint16_t total_column_num;
+  uint16_t total_row_num;
+  uint8_t column_resolution;
+  uint8_t row_resolution;
+  uint8_t first_block_return;
+  uint8_t dis_unit;
+  uint8_t reserved2;
+  uint16_t packet_channel_num;
+  uint8_t reserved3[8];
+};
+
 struct Header12B
 {
   uint16_t sop;
@@ -106,9 +124,7 @@ struct Header12B
 
 struct Header8B
 {
-  /// @brief Start of Packet, 0xEEFF
   uint16_t sop;
-
   uint8_t laser_num;
   uint8_t block_num;
   uint8_t reserved1;
@@ -127,6 +143,14 @@ struct Unit4B
   uint16_t distance;
   uint8_t reflectivity;
   uint8_t confidence_or_reserved;
+};
+
+struct Unit5B
+{
+  uint16_t distance;
+  uint8_t reflectivity;
+  uint8_t reserved_or_confidence1;
+  uint8_t reserved_or_confidence2;
 };
 
 template <typename UnitT, size_t UnitN>
@@ -161,6 +185,16 @@ struct SOBBlock
   UnitT units[UnitN];
 
   [[nodiscard]] uint32_t get_azimuth() const { return azimuth; }
+};
+
+template <typename UnitT, size_t UnitN>
+struct NoAzimuthBlock
+{
+  using unit_t = UnitT;
+  UnitT units[UnitN];
+
+  // Dummy azimuth to satisfy generic decoder expectations if called
+  [[nodiscard]] uint32_t get_azimuth() const { return 0; }
 };
 
 template <typename BlockT, size_t BlockN>
@@ -215,7 +249,7 @@ inline int get_n_returns(uint8_t return_mode)
     case return_mode::TRIPLE_FIRST_LAST_STRONGEST:
       return 3;
     default:
-      throw std::runtime_error("Unknown return mode");
+      throw std::runtime_error("Unknown return mode: " + std::to_string(return_mode));
   }
 }
 

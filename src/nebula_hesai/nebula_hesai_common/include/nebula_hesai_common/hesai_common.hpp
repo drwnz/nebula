@@ -20,6 +20,7 @@
 #include "nebula_core_common/util/string_conversions.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -591,6 +592,317 @@ struct HesaiCorrection : public HesaiCalibrationConfigurationBase
   }
 };
 
+namespace FT
+{
+static constexpr int FT2_CORRECTION_LEN = 256;
+static constexpr int FT2_ROW_MAX = 192;  // Max rows (FTX180 192x224, FTX140 192x256)
+static constexpr int FT2_COL_MAX = 256;
+
+#pragma pack(push, 1)
+struct CorrectionDis
+{
+  float x;
+  float y;
+  float z;
+};
+
+struct CorrectionV3
+{
+  uint16_t m_u16Delimiter;   // 0xee 0xff
+  uint8_t m_u8VersionMajor;  // 0x07
+  uint8_t m_u8VersionMinor;  // 0x03
+  uint8_t m_u8Reserved0;
+  uint8_t m_u8Reserved1;
+  uint16_t m_u16TotalRow;
+  uint16_t m_u16TotalCol;
+  float f;
+  float cx;
+  float cy;
+  float k1;
+  float k2;
+  float k3;
+  float k4;
+  float p1;
+  float p2;
+  uint8_t m_u8Sha256[32];
+
+  float distortion_func(float theta) const
+  {
+    return theta + k1 * std::pow(theta, 3) + k2 * std::pow(theta, 5) + k3 * std::pow(theta, 7) +
+           k4 * std::pow(theta, 9);
+  }
+
+  std::vector<std::vector<float>> generate_pixel_vectors() const
+  {
+    float phi, phi_rad, alpha_rad;
+    alpha_rad = 2 * atan(p1);
+    if (alpha_rad < 0) {
+      alpha_rad = -alpha_rad;
+      phi = p2 + M_PI;
+    } else {
+      phi = p2;
+    }
+    phi_rad = (phi / M_PI / 2 - int(phi / M_PI / 2)) * 2 * M_PI + M_PI;
+
+    float R[3][3];  // rotation matrix
+    float cos_a = cos(alpha_rad);
+    float sin_a = sin(alpha_rad);
+    float cos_p = cos(phi_rad);
+    float sin_p = sin(phi_rad);
+    R[0][0] = cos_a + (1 - cos_a) * cos_p * cos_p;
+    R[0][1] = (1 - cos_a) * cos_p * sin_p;
+    R[0][2] = sin_a * sin_p;
+    R[1][0] = (1 - cos_a) * cos_p * sin_p;
+    R[1][1] = cos_a + (1 - cos_a) * sin_p * sin_p;
+    R[1][2] = -sin_a * cos_p;
+    R[2][0] = -sin_a * sin_p;
+    R[2][1] = sin_a * cos_p;
+    R[2][2] = cos_a;
+
+    float theta_th =
+      std::pow(std::pow(std::max(cx, 767.f - cx), 2) + std::pow(std::max(cy, 575.f - cy), 2), 0.5) /
+      f;
+    float tan_theta_th = 750.0 / f;
+
+    int n_interp = 1024;
+    std::vector<float> theta_arr(n_interp, 0.0);
+    std::vector<float> theta_d_arr(n_interp, 0.0);
+    for (int i = 0; i < n_interp; ++i) {
+      theta_arr[i] = i * tan_theta_th / n_interp;
+      theta_d_arr[i] = distortion_func(theta_arr[i]);
+      if (i > 0) {
+        if (theta_d_arr[i] < theta_d_arr[i - 1]) {
+          n_interp = i;
+          break;
+        }
+      }
+    }
+    theta_arr.resize(n_interp);
+    theta_d_arr.resize(n_interp);
+
+    std::vector<std::vector<float>> pixel_vectors(
+      m_u16TotalRow * m_u16TotalCol, std::vector<float>(3, 0));
+
+    int init_row = (192 - m_u16TotalRow) >> 1;
+    int init_col = (256 - m_u16TotalCol) >> 1;
+
+    for (int i = init_row; i < m_u16TotalRow + init_row; ++i) {
+      for (int j = init_col; j < (m_u16TotalCol + init_col); ++j) {
+        float x = (j * 3 + 1 - cx) / f;
+        float y = (575 - (i * 3 + 1) - cy) / f;
+        float x1 = x * R[0][0] + y * R[0][1] + 0;
+        float y1 = x * R[1][0] + y * R[1][1] + 0;
+        float z1 = x * R[2][0] + y * R[2][1] + 0;
+        float x2 = -x1 / (z1 - 1);
+        float y2 = -y1 / (z1 - 1);
+        float theta_d = sqrt(pow(x2, 2) + pow(y2, 2));
+
+        std::vector<float> pvec = {0, 0, 0};
+        if (theta_d == 0) {
+          pvec = {0.0, 0.0, 1.0};
+        } else if (theta_d > theta_th) {
+          pvec = {0.0, 0.0, 0.0};
+        } else {
+          auto it = std::lower_bound(theta_d_arr.begin(), theta_d_arr.end(), theta_d);
+          int pos = std::distance(theta_d_arr.begin(), it) - 1;
+          if (pos < 0 || pos >= (int)theta_d_arr.size() - 1) {
+            pvec = {0.0, 0.0, 0.0};
+          } else {
+            float theta = (theta_arr[pos + 1] - theta_arr[pos]) /
+                            (theta_d_arr[pos + 1] - theta_d_arr[pos]) *
+                            (theta_d - theta_d_arr[pos]) +
+                          theta_arr[pos];
+            float tan_theta = tan(theta);
+            pvec = {x2, y2, static_cast<float>(sqrt(x2 * x2 + y2 * y2) / tan_theta)};
+            float pvec_norm = sqrt(pow(pvec[0], 2) + pow(pvec[1], 2) + pow(pvec[2], 2));
+            pvec[0] /= pvec_norm;
+            pvec[1] /= pvec_norm;
+            pvec[2] /= pvec_norm;
+          }
+        }
+        pixel_vectors[(i - init_row) * m_u16TotalCol + (j - init_col)] = {
+          pvec[2], -pvec[0], -pvec[1]};
+      }
+    }
+    return pixel_vectors;
+  }
+};
+#pragma pack(pop)
+}  // namespace FT
+
+/// @brief struct for Hesai correction configuration (FTX series)
+struct HesaiCorrectionFTX : public HesaiCalibrationConfiguration
+{
+  FT::CorrectionV3 correction_v3_{};
+  std::array<FT::CorrectionDis, FT::FT2_CORRECTION_LEN * FT::FT2_CORRECTION_LEN> xyz_corrections_{};
+  bool valid_ = false;
+
+  /// @brief Load correction data from byte array downloaded from sensor over TCP
+  /// @param buf Binary buffer
+  /// @return Resulting status
+  inline nebula::Status load_from_bytes(const std::vector<uint8_t> & buf) override
+  {
+    if (buf.size() < 2 || buf[0] != 0xEE || buf[1] != 0xFF) {
+      if (buf.size() >= FT::FT2_ROW_MAX * FT::FT2_COL_MAX * sizeof(float) * 3) {
+        // Raw float array (fallback)
+        const uint8_t * correction_string = buf.data();
+        memset(&correction_v3_, 0, sizeof(FT::CorrectionV3));
+        correction_v3_.m_u16TotalRow = FT::FT2_ROW_MAX;
+        correction_v3_.m_u16TotalCol = FT::FT2_COL_MAX;
+        for (int row = 0; row < FT::FT2_ROW_MAX; row++) {
+          for (int col = 0; col < FT::FT2_COL_MAX; col++) {
+            xyz_corrections_[row * FT::FT2_CORRECTION_LEN + col].x =
+              *((const float *)correction_string);
+            correction_string += sizeof(float);
+            xyz_corrections_[row * FT::FT2_CORRECTION_LEN + col].y =
+              *((const float *)correction_string);
+            correction_string += sizeof(float);
+            xyz_corrections_[row * FT::FT2_CORRECTION_LEN + col].z =
+              *((const float *)correction_string);
+            correction_string += sizeof(float);
+          }
+        }
+        valid_ = true;
+        return Status::OK;
+      }
+      return Status::INVALID_CALIBRATION_FILE;
+    }
+
+    if (buf.size() < sizeof(FT::CorrectionV3)) {
+      return Status::INVALID_CALIBRATION_FILE;
+    }
+
+    memcpy(&correction_v3_, buf.data(), sizeof(FT::CorrectionV3));
+    if (correction_v3_.m_u8VersionMajor != 0x07 || correction_v3_.m_u8VersionMinor != 0x03) {
+      return Status::INVALID_CALIBRATION_FILE;
+    }
+
+    auto pixel_vectors = correction_v3_.generate_pixel_vectors();
+    for (int i = 0; i < correction_v3_.m_u16TotalRow; i++) {
+      for (int j = 0; j < correction_v3_.m_u16TotalCol; j++) {
+        xyz_corrections_[i * FT::FT2_CORRECTION_LEN + j].x =
+          pixel_vectors[i * correction_v3_.m_u16TotalCol + j][0];
+        xyz_corrections_[i * FT::FT2_CORRECTION_LEN + j].y =
+          pixel_vectors[i * correction_v3_.m_u16TotalCol + j][1];
+        xyz_corrections_[i * FT::FT2_CORRECTION_LEN + j].z =
+          pixel_vectors[i * correction_v3_.m_u16TotalCol + j][2];
+      }
+    }
+    valid_ = true;
+
+    return Status::OK;
+  }
+
+  /// @brief Load correction data from 5-column CSV string
+  /// @param calibration_content String formatted data
+  /// @return Resulting status
+  inline nebula::Status load_from_string(const std::string & calibration_content)
+  {
+    std::stringstream ifs(calibration_content);
+    std::string line;
+    std::getline(ifs, line);  // header
+
+    int rowIdMax = 0, cloumnIdMax = 0;
+    while (std::getline(ifs, line)) {
+      if (line.empty() || line.length() < 9) {
+        continue;
+      }
+      float x, y, z;
+      int rowId = 0, cloumnId = 0;
+      std::stringstream ss(line);
+      std::string subline;
+      std::getline(ss, subline, ',');
+      if (subline.empty()) continue;
+      rowId = std::stoi(subline);
+      std::getline(ss, subline, ',');
+      cloumnId = std::stoi(subline);
+      std::getline(ss, subline, ',');
+      x = std::stof(subline);
+      std::getline(ss, subline, ',');
+      y = std::stof(subline);
+      std::getline(ss, subline, ',');
+      z = std::stof(subline);
+
+      if (rowId > FT::FT2_CORRECTION_LEN || cloumnId > FT::FT2_CORRECTION_LEN) {
+        return Status::INVALID_CALIBRATION_FILE;
+      }
+      if (rowId % 2 == 0 && cloumnId % 2 == 0) {
+        rowId /= 2;
+        cloumnId /= 2;
+        xyz_corrections_[rowId * FT::FT2_CORRECTION_LEN + cloumnId].x = x;
+        xyz_corrections_[rowId * FT::FT2_CORRECTION_LEN + cloumnId].y = y;
+        xyz_corrections_[rowId * FT::FT2_CORRECTION_LEN + cloumnId].z = z;
+        rowIdMax = std::max(rowIdMax, rowId);
+        cloumnIdMax = std::max(cloumnIdMax, cloumnId);
+      }
+    }
+
+    correction_v3_.m_u16TotalRow = rowIdMax + 1;
+    correction_v3_.m_u16TotalCol = cloumnIdMax + 1;
+    valid_ = true;
+
+    return Status::OK;
+  }
+
+  /// @brief Load correction data from file
+  /// @param correction_file path
+  /// @return Resulting status
+  inline nebula::Status load_from_file(const std::string & correction_file) override
+  {
+    if (
+      correction_file.substr(correction_file.find_last_of(".") + 1) == "csv" ||
+      correction_file.substr(correction_file.find_last_of(".") + 1) == "CSV") {
+      std::ifstream ifs(correction_file);
+      if (!ifs) return Status::INVALID_CALIBRATION_FILE;
+      std::ostringstream ss;
+      ss << ifs.rdbuf();
+      ifs.close();
+      return load_from_string(ss.str());
+    }
+
+    std::ifstream ifs(correction_file, std::ios::in | std::ios::binary);
+    if (!ifs) {
+      return Status::INVALID_CALIBRATION_FILE;
+    }
+    ifs.seekg(0, std::ios::end);
+    int len = static_cast<int>(ifs.tellg());
+    ifs.seekg(0, std::ios::beg);
+    std::vector<uint8_t> buf(len);
+    ifs.read(reinterpret_cast<char *>(buf.data()), len);
+    ifs.close();
+
+    return load_from_bytes(buf);
+  }
+
+  /// @brief Save correction data from binary buffer
+  /// @param correction_file path
+  /// @param buf correction binary
+  /// @return Resulting status
+  inline nebula::Status save_to_file_from_bytes(
+    const std::string & correction_file, const std::vector<uint8_t> & buf) override
+  {
+    std::ofstream ofs(correction_file, std::ios::trunc | std::ios::binary);
+    if (!ofs) {
+      std::cerr << "Could not create file: " << correction_file << "\n";
+      return Status::CANNOT_SAVE_FILE;
+    }
+    bool sop_received = false;
+    for (const auto & byte : buf) {
+      if (!sop_received) {
+        if (byte == 0xEE) {
+          sop_received = true;
+        }
+      }
+      if (sop_received) {
+        ofs << byte;
+      }
+    }
+    ofs.close();
+    if (sop_received) return Status::OK;
+    return Status::INVALID_CALIBRATION_FILE;
+  }
+};
+
 /*
 <option value="0">Last Return</option>
 <option value="1">Strongest Return</option>
@@ -623,6 +935,12 @@ inline ReturnMode return_mode_from_string_hesai(
     case SensorModel::HESAI_PANDAR128_E3X:
     case SensorModel::HESAI_PANDAR128_E4X:
     case SensorModel::HESAI_PANDARQT128:
+    case SensorModel::HESAI_PANDARAT128:
+    case SensorModel::HESAI_PANDAR64:
+    case SensorModel::HESAI_PANDAR40P:
+    case SensorModel::HESAI_PANDAR40M:
+    case SensorModel::HESAI_FTX140:
+    case SensorModel::HESAI_FTX180:
       if (return_mode == "Last") return ReturnMode::LAST;
       if (return_mode == "Strongest") return ReturnMode::STRONGEST;
       if (return_mode == "Dual" || return_mode == "LastStrongest")
@@ -632,17 +950,10 @@ inline ReturnMode return_mode_from_string_hesai(
       if (return_mode == "FirstStrongest") return ReturnMode::DUAL_FIRST_STRONGEST;
       break;
     case SensorModel::HESAI_PANDARQT64:
+      // For QT64 'Dual' means 'LastFirst'
       if (return_mode == "Last") return ReturnMode::LAST;
       if (return_mode == "Dual" || return_mode == "LastFirst") return ReturnMode::DUAL_LAST_FIRST;
       if (return_mode == "First") return ReturnMode::FIRST;
-      break;
-    case SensorModel::HESAI_PANDARAT128:
-    case SensorModel::HESAI_PANDAR64:
-    case SensorModel::HESAI_PANDAR40P:
-      if (return_mode == "Last") return ReturnMode::LAST;
-      if (return_mode == "Strongest") return ReturnMode::STRONGEST;
-      if (return_mode == "Dual" || return_mode == "LastStrongest")
-        return ReturnMode::DUAL_LAST_STRONGEST;
       break;
     default:
       throw std::runtime_error("Unsupported sensor model: " + util::to_string(sensor_model));
@@ -665,24 +976,23 @@ inline ReturnMode return_mode_from_int_hesai(
     case SensorModel::HESAI_PANDAR128_E3X:
     case SensorModel::HESAI_PANDAR128_E4X:
     case SensorModel::HESAI_PANDARQT128:
-      if (return_mode == 0) return ReturnMode::LAST;
-      if (return_mode == 1) return ReturnMode::STRONGEST;
-      if (return_mode == 2) return ReturnMode::DUAL_LAST_STRONGEST;
-      if (return_mode == 3) return ReturnMode::FIRST;
-      if (return_mode == 4) return ReturnMode::DUAL_LAST_FIRST;
-      if (return_mode == 5) return ReturnMode::DUAL_FIRST_STRONGEST;
-      break;
-    case SensorModel::HESAI_PANDARQT64:
-      if (return_mode == 0) return ReturnMode::LAST;
-      if (return_mode == 2) return ReturnMode::DUAL_LAST_FIRST;
-      if (return_mode == 3) return ReturnMode::FIRST;
-      break;
     case SensorModel::HESAI_PANDARAT128:
     case SensorModel::HESAI_PANDAR64:
     case SensorModel::HESAI_PANDAR40P:
-      if (return_mode == 0) return ReturnMode::LAST;
-      if (return_mode == 1) return ReturnMode::STRONGEST;
-      if (return_mode == 2) return ReturnMode::DUAL_LAST_STRONGEST;
+    case SensorModel::HESAI_PANDAR40M:
+    case SensorModel::HESAI_PANDARQT64:
+    case SensorModel::HESAI_FTX140:
+    case SensorModel::HESAI_FTX180:
+      if (return_mode == 1 || return_mode == 0x37) return ReturnMode::STRONGEST;
+      if (return_mode == 0 || return_mode == 0x38) return ReturnMode::LAST;
+      if (return_mode == 3 || return_mode == 0x33) return ReturnMode::FIRST;
+      if (sensor_model == SensorModel::HESAI_PANDARQT64) {
+        if (return_mode == 2 || return_mode == 0x39) return ReturnMode::DUAL_LAST_FIRST;
+      } else {
+        if (return_mode == 2 || return_mode == 0x39) return ReturnMode::DUAL_LAST_STRONGEST;
+        if (return_mode == 4 || return_mode == 0x3b) return ReturnMode::DUAL_LAST_FIRST;
+        if (return_mode == 5 || return_mode == 0x3c) return ReturnMode::DUAL_FIRST_STRONGEST;
+      }
       break;
     default:
       throw std::runtime_error("Unsupported sensor model: " + util::to_string(sensor_model));
@@ -705,26 +1015,24 @@ inline int int_from_return_mode_hesai(
     case SensorModel::HESAI_PANDAR128_E3X:
     case SensorModel::HESAI_PANDAR128_E4X:
     case SensorModel::HESAI_PANDARQT128:
-      if (return_mode == ReturnMode::LAST) return 0;
-      if (return_mode == ReturnMode::STRONGEST) return 1;
-      if (return_mode == ReturnMode::DUAL || return_mode == ReturnMode::DUAL_LAST_STRONGEST)
-        return 2;
-      if (return_mode == ReturnMode::FIRST) return 3;
-      if (return_mode == ReturnMode::DUAL_LAST_FIRST) return 4;
-      if (return_mode == ReturnMode::DUAL_FIRST_STRONGEST) return 5;
-      break;
-    case SensorModel::HESAI_PANDARQT64:
-      if (return_mode == ReturnMode::LAST) return 0;
-      if (return_mode == ReturnMode::DUAL || return_mode == ReturnMode::DUAL_LAST_FIRST) return 2;
-      if (return_mode == ReturnMode::FIRST) return 3;
-      break;
     case SensorModel::HESAI_PANDARAT128:
     case SensorModel::HESAI_PANDAR64:
     case SensorModel::HESAI_PANDAR40P:
-      if (return_mode == ReturnMode::LAST) return 0;
+    case SensorModel::HESAI_PANDAR40M:
+    case SensorModel::HESAI_PANDARQT64:
+    case SensorModel::HESAI_FTX140:
+    case SensorModel::HESAI_FTX180:
       if (return_mode == ReturnMode::STRONGEST) return 1;
-      if (return_mode == ReturnMode::DUAL || return_mode == ReturnMode::DUAL_LAST_STRONGEST)
-        return 2;
+      if (return_mode == ReturnMode::LAST) return 0;
+      if (return_mode == ReturnMode::FIRST) return 3;
+      if (sensor_model == SensorModel::HESAI_PANDARQT64) {
+        if (return_mode == ReturnMode::DUAL || return_mode == ReturnMode::DUAL_LAST_FIRST) return 2;
+      } else {
+        if (return_mode == ReturnMode::DUAL || return_mode == ReturnMode::DUAL_LAST_STRONGEST)
+          return 2;
+        if (return_mode == ReturnMode::DUAL_LAST_FIRST) return 4;
+        if (return_mode == ReturnMode::DUAL_FIRST_STRONGEST) return 5;
+      }
       break;
     default:
       throw std::runtime_error("Unsupported sensor model: " + util::to_string(sensor_model));
@@ -740,6 +1048,8 @@ inline bool supports_lidar_monitor(const SensorModel & sensor_model)
 {
   switch (sensor_model) {
     case drivers::SensorModel::HESAI_PANDARAT128:
+    case drivers::SensorModel::HESAI_FTX140:
+    case drivers::SensorModel::HESAI_FTX180:
     case drivers::SensorModel::HESAI_PANDAR40P:
     case drivers::SensorModel::HESAI_PANDAR64:
       return false;
@@ -774,6 +1084,8 @@ inline bool supports_packet_loss_detection(const SensorModel & sensor_model)
     case SensorModel::HESAI_PANDAR40M:
     case SensorModel::HESAI_PANDARQT128:
     case SensorModel::HESAI_PANDARAT128:
+    case SensorModel::HESAI_FTX140:
+    case SensorModel::HESAI_FTX180:
     case SensorModel::HESAI_PANDAR128_E3X:
     case SensorModel::HESAI_PANDAR128_E4X:
       return true;

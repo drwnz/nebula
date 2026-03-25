@@ -55,6 +55,14 @@ private:
     FunctionalSafetyDecoderBase::status_cb_t status_cb, PacketLossDetectorBase::lost_cb_t lost_cb,
     std::shared_ptr<point_filters::BlockageMaskPlugin> blockage_mask_plugin = nullptr);
 
+  /// @brief Create an FTX-specific solid-state decoder (does not use functional safety or blockage)
+  template <typename SensorT>
+  std::shared_ptr<HesaiScanDecoder> initialize_ftx_decoder(
+    const std::shared_ptr<const drivers::HesaiSensorConfiguration> & sensor_configuration,
+    const std::shared_ptr<const drivers::HesaiCalibrationConfigurationBase> &
+      calibration_configuration,
+    PacketLossDetectorBase::lost_cb_t lost_cb);
+
   template <typename SensorT>
   std::enable_if_t<
     hesai_packet::HasFunctionalSafety<typename SensorT::packet_t>::value,
