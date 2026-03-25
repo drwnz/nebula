@@ -41,6 +41,10 @@ install(TARGETS nebula_robosense_decoders_info
         EXPORT export_nebula_robosense_decoders_info)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
+add_executable(verify_emx_pcap src/verify_emx_pcap.cpp)
+target_link_libraries(verify_emx_pcap nebula_robosense_decoders pcap)
+install(TARGETS verify_emx_pcap DESTINATION lib/${PROJECT_NAME})
+
 ament_export_include_directories("include/${PROJECT_NAME}")
 ament_export_targets(export_nebula_robosense_decoders)
 ament_export_targets(export_nebula_robosense_decoders_info)

@@ -4,8 +4,12 @@
 
 #include "nebula_robosense_decoders/decoders/bpearl_v3.hpp"
 #include "nebula_robosense_decoders/decoders/bpearl_v4.hpp"
+#include "nebula_robosense_decoders/decoders/e1.hpp"
+#include "nebula_robosense_decoders/decoders/em4.hpp"
+#include "nebula_robosense_decoders/decoders/emx.hpp"
 #include "nebula_robosense_decoders/decoders/helios.hpp"
 #include "nebula_robosense_decoders/decoders/robosense_decoder.hpp"
+#include "nebula_robosense_decoders/decoders/robosense_decoder_directional.hpp"
 
 #include <memory>
 #include <tuple>
@@ -18,11 +22,11 @@ RobosenseDriver::RobosenseDriver(
   const std::shared_ptr<const RobosenseSensorConfiguration> & sensor_configuration,
   const std::shared_ptr<const RobosenseCalibrationConfiguration> & calibration_configuration)
 {
-  // initialize proper parser from cloud config's model and echo mode
-  driver_status_ = nebula::Status::OK;
+  // Initialize proper parser from cloud config's model and echo mode
+  driver_status_ = ::nebula::Status::OK;
   switch (sensor_configuration->sensor_model) {
     case SensorModel::UNKNOWN:
-      driver_status_ = nebula::Status::INVALID_SENSOR_MODEL;
+      driver_status_ = ::nebula::Status::INVALID_SENSOR_MODEL;
       break;
     case SensorModel::ROBOSENSE_BPEARL_V3:
       scan_decoder_.reset(
@@ -36,8 +40,20 @@ RobosenseDriver::RobosenseDriver(
       scan_decoder_.reset(
         new RobosenseDecoder<Helios>(sensor_configuration, calibration_configuration));
       break;
+    case SensorModel::ROBOSENSE_E1:
+      scan_decoder_.reset(
+        new RobosenseDecoderDirectional<E1>(sensor_configuration, calibration_configuration));
+      break;
+    case SensorModel::ROBOSENSE_EM4:
+      scan_decoder_.reset(
+        new RobosenseDecoderDirectional<EM4>(sensor_configuration, calibration_configuration));
+      break;
+    case SensorModel::ROBOSENSE_EMX:
+      scan_decoder_.reset(
+        new RobosenseDecoderDirectional<EMX>(sensor_configuration, calibration_configuration));
+      break;
     default:
-      driver_status_ = nebula::Status::NOT_INITIALIZED;
+      driver_status_ = ::nebula::Status::NOT_INITIALIZED;
       throw std::runtime_error("Driver not Implemented for selected sensor.");
   }
 }
@@ -61,7 +77,7 @@ std::tuple<drivers::NebulaPointCloudPtr, double> RobosenseDriver::parse_cloud_pa
   std::tuple<drivers::NebulaPointCloudPtr, double> pointcloud;
   auto logger = rclcpp::get_logger("RobosenseDriver");
 
-  if (driver_status_ != nebula::Status::OK) {
+  if (driver_status_ != ::nebula::Status::OK) {
     RCLCPP_ERROR(logger, "Driver not OK.");
     return pointcloud;
   }

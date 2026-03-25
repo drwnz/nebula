@@ -31,6 +31,12 @@ constexpr uint16_t helios_packet_size = 1248;
 constexpr uint16_t helios_info_packet_size = 1248;
 constexpr uint16_t bpearl_packet_size = 1248;
 constexpr uint16_t bpearl_info_packet_size = 1248;
+constexpr uint16_t e1_packet_size = 1200;
+constexpr uint16_t e1_info_packet_size = 256;
+constexpr uint16_t em4_packet_size = 1084;
+constexpr uint16_t em4_info_packet_size = 1310;  // DIFOP for EM4 is 1310 bytes
+constexpr uint16_t emx_packet_size = 812;        // Following EMX User Manual
+constexpr uint16_t emx_info_packet_size = 1248;  // Allow up to MTU for various DIFOP versions
 
 /// @brief Hardware interface of Robosense driver
 class RobosenseHwInterface

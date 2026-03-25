@@ -79,11 +79,22 @@ struct ChannelCorrection
 struct RobosenseCalibrationConfiguration : CalibrationConfigurationBase
 {
   std::vector<ChannelCorrection> calibration;
+  std::vector<int16_t> half_vcsel_yaw_offset;
+  std::vector<int16_t> pixel_pitch;
+  std::vector<int16_t> surface_pitch_offset;
 
-  void set_channel_size(const size_t channel_num) { calibration.resize(channel_num); }
+  void set_channel_size(const size_t channel_num)
+  {
+    calibration.resize(channel_num);
+    if (channel_num == 520) {  // EM4
+      half_vcsel_yaw_offset.assign(13, 0);
+      pixel_pitch.assign(520, 0);
+      surface_pitch_offset.assign(4, 0);
+    }
+  }
 
   template <typename stream_t>
-  inline nebula::Status load_from_stream(stream_t & stream)
+  inline ::nebula::Status load_from_stream(stream_t & stream)
   {
     std::string header;
     std::getline(stream, header);
@@ -92,24 +103,24 @@ struct RobosenseCalibrationConfiguration : CalibrationConfigurationBase
     size_t laser_id;
     float elevation;
     float azimuth;
-    Status load_status = Status::OK;
+    ::nebula::Status load_status = ::nebula::Status::OK;
     for (size_t i = 0; i < calibration.size(); ++i) {
       stream >> laser_id >> sep >> elevation >> sep >> azimuth;
 
       if (laser_id <= 0 || laser_id > calibration.size()) {
         std::cout << "Invalid laser id: " << laser_id << std::endl;
-        load_status = Status::INVALID_CALIBRATION_FILE;
+        load_status = ::nebula::Status::INVALID_CALIBRATION_FILE;
       }
       if (std::isnan(elevation) || std::isnan(azimuth)) {
         std::cout << "Invalid calibration data" << laser_id << "," << elevation << "," << azimuth
                   << std::endl;
-        load_status = Status::INVALID_CALIBRATION_FILE;
+        load_status = ::nebula::Status::INVALID_CALIBRATION_FILE;
       }
       if (
         calibration[laser_id - 1].has_value() && calibration[laser_id - 1].elevation != elevation &&
         calibration[laser_id - 1].azimuth != azimuth) {
         std::cout << "Duplicate calibration data for laser id: " << laser_id << std::endl;
-        load_status = Status::INVALID_CALIBRATION_FILE;
+        load_status = ::nebula::Status::INVALID_CALIBRATION_FILE;
       }
 
       ChannelCorrection correction{azimuth, elevation};
@@ -120,11 +131,11 @@ struct RobosenseCalibrationConfiguration : CalibrationConfigurationBase
       if (!calib.has_value()) {
         std::cout << calib.elevation << "," << calib.azimuth << std::endl;
         std::cout << "Missing calibration data" << std::endl;
-        load_status = Status::INVALID_CALIBRATION_FILE;
+        load_status = ::nebula::Status::INVALID_CALIBRATION_FILE;
       }
     }
 
-    if (load_status != Status::OK) {
+    if (load_status != ::nebula::Status::OK) {
       for (auto & correction : calibration) {
         correction.elevation = NAN;
         correction.azimuth = NAN;
@@ -134,11 +145,11 @@ struct RobosenseCalibrationConfiguration : CalibrationConfigurationBase
     return load_status;
   }
 
-  inline nebula::Status load_from_file(const std::string & calibration_file)
+  inline ::nebula::Status load_from_file(const std::string & calibration_file)
   {
     std::ifstream ifs(calibration_file);
     if (!ifs) {
-      return Status::INVALID_CALIBRATION_FILE;
+      return ::nebula::Status::INVALID_CALIBRATION_FILE;
     }
 
     const auto status = load_from_stream(ifs);
@@ -149,7 +160,7 @@ struct RobosenseCalibrationConfiguration : CalibrationConfigurationBase
   /// @brief Loading calibration data (not used)
   /// @param calibration_content
   /// @return Resulting status
-  inline nebula::Status load_from_string(const std::string & calibration_content)
+  inline ::nebula::Status load_from_string(const std::string & calibration_content)
   {
     std::stringstream ss;
     ss << calibration_content;
@@ -163,11 +174,11 @@ struct RobosenseCalibrationConfiguration : CalibrationConfigurationBase
   /// @brief Saving calibration data (not used)
   /// @param calibration_file
   /// @return Resulting status
-  inline nebula::Status save_file(const std::string & calibration_file)
+  inline ::nebula::Status save_file(const std::string & calibration_file)
   {
     std::ofstream ofs(calibration_file);
     if (!ofs) {
-      return Status::CANNOT_SAVE_FILE;
+      return ::nebula::Status::CANNOT_SAVE_FILE;
     }
     ofs << "Laser id,Elevation,Azimuth" << std::endl;
 
@@ -179,7 +190,7 @@ struct RobosenseCalibrationConfiguration : CalibrationConfigurationBase
     }
 
     ofs.close();
-    return Status::OK;
+    return ::nebula::Status::OK;
   }
 
   [[nodiscard]] inline ChannelCorrection get_correction(const size_t channel_id) const

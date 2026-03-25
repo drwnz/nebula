@@ -3,6 +3,9 @@
   <arg name="sensor_model">
     <choice value="Helios" />
     <choice value="Bpearl" />
+    <choice value="E1" />
+    <choice value="EM4" />
+    <choice value="EMX" />
   </arg>
   <arg name="launch_hw" default="true" description="Whether to connect to a real sensor (true) or to accept packet messages (false).">
     <choice value="true" />
