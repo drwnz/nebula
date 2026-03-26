@@ -276,8 +276,10 @@ if __name__ == "__main__":
         sensor_ip: str
         destination_ip: str | None
         data_port: int | None
+        gps_port: int | None
         new_sensor_ip: str | None
         mask: str | None
+        gateway: str | None
 
     parser = ArgumentParser()
     parser.add_argument(
@@ -299,6 +301,12 @@ if __name__ == "__main__":
         help="Change the current destination LiDAR data port to the given one",
     )
     parser.add_argument(
+        "--gps-port",
+        type=int,
+        default=None,
+        help="Change the current auxiliary destination port to the given one",
+    )
+    parser.add_argument(
         "--new-sensor-ip",
         type=str,
         default=None,
@@ -313,6 +321,12 @@ if __name__ == "__main__":
             "You can pass it in either a CIDR notation or dotted-decimal notation."
         ),
     )
+    parser.add_argument(
+        "--gateway",
+        type=str,
+        default=None,
+        help="Change the current gateway to the given one",
+    )
 
     args = parser.parse_args(namespace=NameSpace)
 
@@ -325,6 +339,9 @@ if __name__ == "__main__":
     if not is_valid_ip(args.new_sensor_ip):
         raise ValueError(f"Invalid new sensor IP {args.new_sensor_ip}")
 
+    if not is_valid_ip(args.gateway):
+        raise ValueError(f"Invalid gateway {args.gateway}")
+
     if args.mask is not None:
         if is_valid_netmask(args.mask):
             args.mask = normalize_netmask(args.mask)
@@ -334,10 +351,11 @@ if __name__ == "__main__":
                 "It must be in the range of 0.0.0.0 (/0) to 255.255.255.255 (/32)."
             )
 
-    if args.data_port is not None:
-        if args.data_port < 0 or 65535 < args.data_port:
+    for port_name in ("data_port", "gps_port"):
+        port = getattr(args, port_name)
+        if port is not None and (port < 0 or 65535 < port):
             raise ValueError(
-                f"Invalid data port {args.data_port}. " "It must be in the range of 0 to 65535."
+                f"Invalid {port_name} {port}. It must be in the range of 0 to 65535."
             )
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -363,17 +381,21 @@ if __name__ == "__main__":
         parsed_config_info = config_info.parse()
         current_destination_ip = parsed_config_info["dest_ipaddr"]
         current_data_port = parsed_config_info["dest_lidar_udp_port"]
+        current_gps_port = parsed_config_info["dest_gps_udp_port"]
         current_mask = parsed_config_info["mask"]
+        current_gateway = parsed_config_info["gateway"]
 
         destination_ip = (
             current_destination_ip if args.destination_ip is None else args.destination_ip
         )
         data_port = current_data_port if args.data_port is None else args.data_port
+        gps_port = current_gps_port if args.gps_port is None else args.gps_port
         new_sensor_ip = args.sensor_ip if args.new_sensor_ip is None else args.new_sensor_ip
         mask = current_mask if args.mask is None else args.mask
+        gateway = current_gateway if args.gateway is None else args.gateway
 
         # Set Destination IP (0x20)
-        if args.destination_ip is not None or args.data_port is not None:
+        if args.destination_ip is not None or args.data_port is not None or args.gps_port is not None:
             if not is_same_subnet(destination_ip, args.sensor_ip, mask):
                 raise ValueError(
                     f"Destination IP {destination_ip} is not in the same subnet as the sensor IP {args.sensor_ip}."
@@ -381,33 +403,36 @@ if __name__ == "__main__":
                 )
 
             print(
-                f"Changing destination IP:Port from {current_destination_ip}:{current_data_port} to {destination_ip}:{data_port}...",
+                "Changing destination IP/data_port/gps_port from "
+                f"{current_destination_ip}:{current_data_port}:{current_gps_port} to "
+                f"{destination_ip}:{data_port}:{gps_port}...",
                 end=" ",
                 flush=True,
             )
 
             payload = socket.inet_aton(destination_ip)
             payload += struct.pack("!H", data_port)
-            payload += struct.pack("!H", 2369)
+            payload += struct.pack("!H", gps_port)
 
             sock.sendall(compose_packet(SET_DESTINATION_IP_COMMAND, len(payload), payload))
 
             print("Done")
 
         # Set Control Port (0x21)
-        if args.new_sensor_ip is not None or args.mask is not None:
+        if args.new_sensor_ip is not None or args.mask is not None or args.gateway is not None:
             if not yesno(
-                "Are you sure you want to change the sensor IP address from "
-                f"{args.sensor_ip}/{current_mask} to {new_sensor_ip}/{mask}?"
+                "Are you sure you want to change the sensor network settings from "
+                f"{args.sensor_ip}/{current_mask} gw={current_gateway} to "
+                f"{new_sensor_ip}/{mask} gw={gateway}?"
             ):
                 print("Aborted")
                 sys.exit(0)
 
             payload = socket.inet_aton(new_sensor_ip)
             payload += socket.inet_aton(mask)
-            payload += socket.inet_aton("192.168.1.1")
-            payload += struct.pack("!B", 0)
-            payload += struct.pack("!H", 0)
+            payload += socket.inet_aton(gateway)
+            payload += struct.pack("!B", parsed_config_info["vlan_flag"])
+            payload += struct.pack("!H", parsed_config_info["vlan_id"])
 
             sock.sendall(compose_packet(SET_CONTROL_PORT_COMMAND, len(payload), payload))
 
@@ -415,15 +440,17 @@ if __name__ == "__main__":
 
             print()
             print(
-                f"Make sure the new sensor IP is successfully set to {new_sensor_ip}/{mask} by the following command"
+                f"Make sure the new sensor network settings are successfully applied for {new_sensor_ip}/{mask} gw={gateway} by the following command"
             )
             print(Syntax(f"python3 {sys.argv[0]} --sensor-ip {new_sensor_ip}", "console"))
 
         if (
             args.destination_ip is not None
             or args.data_port is not None
+            or args.gps_port is not None
             or args.new_sensor_ip is not None
             or args.mask is not None
+            or args.gateway is not None
         ):
             table = Table(
                 "Parameter", "Old", "New", title="What's Changed", highlight=True, min_width=50
@@ -435,8 +462,12 @@ if __name__ == "__main__":
                 table.add_row("destination_ip", str(current_destination_ip), str(destination_ip))
             if data_port != current_data_port:
                 table.add_row("data_port", str(current_data_port), str(data_port))
+            if gps_port != current_gps_port:
+                table.add_row("gps_port", str(current_gps_port), str(gps_port))
             if mask != current_mask:
                 table.add_row("mask", str(current_mask), str(mask))
+            if gateway != current_gateway:
+                table.add_row("gateway", str(current_gateway), str(gateway))
 
             print()
             print(table)
