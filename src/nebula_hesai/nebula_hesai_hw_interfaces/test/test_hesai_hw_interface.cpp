@@ -119,6 +119,11 @@ public:
 
   uint16_t get_tcp_port() const { return tcp_port_; }
   uint16_t get_http_port() const { return http_port_; }
+  [[nodiscard]] std::vector<uint8_t> get_received_commands() const
+  {
+    std::lock_guard<std::mutex> lock(commands_mutex_);
+    return received_commands_;
+  }
 
 private:
   void handle_tcp_client(int client)
@@ -141,6 +146,11 @@ private:
       std::vector<uint8_t> payload(payload_len);
       if (payload_len > 0) {
         if (read(client, payload.data(), payload_len) != payload_len) break;
+      }
+
+      {
+        std::lock_guard<std::mutex> lock(commands_mutex_);
+        received_commands_.push_back(command_id);
       }
 
       // Generate Response
@@ -219,6 +229,8 @@ private:
   std::atomic_bool running_;
   std::thread tcp_thread_;
   std::thread http_thread_;
+  mutable std::mutex commands_mutex_;
+  std::vector<uint8_t> received_commands_;
 };
 
 class MockHesaiCalibration : public nebula::drivers::HesaiCalibrationConfigurationBase
@@ -423,6 +435,40 @@ TEST_F(TestHesaiHwInterface, TestCheckAndSetConfigHTTP)
   EXPECT_EQ(hw_interface_->initialize_tcp_socket(), nebula::Status::OK);
 
   EXPECT_EQ(hw_interface_->check_and_set_config(), nebula::HesaiStatus::OK);
+}
+
+TEST_F(TestHesaiHwInterface, TestCheckAndSetConfigFTX)
+{
+  auto config = std::make_shared<nebula::drivers::HesaiSensorConfiguration>();
+  config->sensor_model = nebula::drivers::SensorModel::HESAI_FTX140;
+  config->sensor_ip = "127.0.0.1";
+  config->host_ip = "192.168.1.10";
+  config->data_port = 2368;
+  config->gnss_port = 10110;
+  config->ptp_profile = nebula::drivers::PtpProfile::IEEE_802_1AS_AUTO;
+  config->ptp_domain = 0;
+  config->ptp_transport_type = nebula::drivers::PtpTransportType::L2;
+  config->ptp_switch_type = nebula::drivers::PtpSwitchType::TSN;
+  config->return_mode = nebula::drivers::ReturnMode::SINGLE_FIRST;
+  config->rotation_speed = 600;
+  config->sync_angle = 180;
+
+  hw_interface_->set_sensor_configuration(config);
+  hw_interface_->set_target_model(config->sensor_model);
+  EXPECT_EQ(hw_interface_->initialize_tcp_socket(), nebula::Status::OK);
+
+  EXPECT_EQ(hw_interface_->check_and_set_config(), nebula::HesaiStatus::OK);
+
+  auto commands = mock_sensor_->get_received_commands();
+  EXPECT_NE(
+    std::find(commands.begin(), commands.end(), nebula::drivers::g_ptc_command_set_destination_ip),
+    commands.end());
+  EXPECT_NE(
+    std::find(commands.begin(), commands.end(), nebula::drivers::g_ptc_command_set_control_port),
+    commands.end());
+  EXPECT_NE(
+    std::find(commands.begin(), commands.end(), nebula::drivers::g_ptc_command_set_ptp_config),
+    commands.end());
 }
 
 TEST_F(TestHesaiHwInterface, TestCheckAndSetLidarRange)
