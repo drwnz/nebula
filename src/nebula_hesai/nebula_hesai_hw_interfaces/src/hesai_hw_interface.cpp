@@ -1047,11 +1047,13 @@ HesaiStatus HesaiHwInterface::check_and_set_config(
   logger_->debug("Start CheckAndSetConfig(HesaiConfig)!");
 #endif
   const auto hesai_config = hesai_config_ptr->get();
-  if (
-    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX140 ||
-    sensor_configuration_->sensor_model == SensorModel::HESAI_FTX180) {
-    return Status::OK;
-  }
+
+  auto ip_bytes_to_string = [](const uint8_t (&ip)[4]) {
+    std::ostringstream ss;
+    ss << static_cast<int>(ip[0]) << "." << static_cast<int>(ip[1]) << "."
+       << static_cast<int>(ip[2]) << "." << static_cast<int>(ip[3]);
+    return ss.str();
+  };
 
   auto current_return_mode = nebula::drivers::return_mode_from_int_hesai(
     hesai_config.return_mode, sensor_configuration->sensor_model);
@@ -1103,12 +1105,7 @@ HesaiStatus HesaiHwInterface::check_and_set_config(
   }
 
   bool set_flg = false;
-  std::stringstream ss;
-  ss << static_cast<int>(hesai_config.dest_ipaddr[0]) << "."
-     << static_cast<int>(hesai_config.dest_ipaddr[1]) << "."
-     << static_cast<int>(hesai_config.dest_ipaddr[2]) << "."
-     << static_cast<int>(hesai_config.dest_ipaddr[3]);
-  auto current_host_addr = ss.str();
+  auto current_host_addr = ip_bytes_to_string(hesai_config.dest_ipaddr);
   auto desired_host_addr = sensor_configuration->multicast_ip.empty()
                              ? sensor_configuration->host_ip
                              : sensor_configuration->multicast_ip;
@@ -1149,6 +1146,33 @@ HesaiStatus HesaiHwInterface::check_and_set_config(
     });
     t.join();
     std::this_thread::sleep_for(wait_time);
+  }
+
+  if (
+    sensor_configuration->sensor_model == SensorModel::HESAI_FTX140 ||
+    sensor_configuration->sensor_model == SensorModel::HESAI_FTX180) {
+    auto current_sensor_addr = ip_bytes_to_string(hesai_config.ipaddr);
+    if (sensor_configuration->sensor_ip != current_sensor_addr) {
+      logger_->info("current lidar ipaddr: " + current_sensor_addr);
+      logger_->info("current configuration sensor_ip: " + sensor_configuration->sensor_ip);
+
+      std::vector<std::string> ip_sections;
+      boost::split(ip_sections, sensor_configuration->sensor_ip, boost::is_any_of("."));
+      if (ip_sections.size() != 4) {
+        throw std::runtime_error("Invalid sensor_ip configuration for Hesai control port setup");
+      }
+
+      std::thread t([this, &hesai_config, &ip_sections] {
+        set_control_port(
+          std::stoi(ip_sections[0]), std::stoi(ip_sections[1]), std::stoi(ip_sections[2]),
+          std::stoi(ip_sections[3]), hesai_config.mask[0], hesai_config.mask[1],
+          hesai_config.mask[2], hesai_config.mask[3], hesai_config.gateway[0],
+          hesai_config.gateway[1], hesai_config.gateway[2], hesai_config.gateway[3],
+          hesai_config.vlan_flag, hesai_config.vlan_id.value());
+      });
+      t.join();
+      std::this_thread::sleep_for(wait_time);
+    }
   }
 
   if (
