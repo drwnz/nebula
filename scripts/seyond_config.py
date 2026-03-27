@@ -1,22 +1,23 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
 #     "rich",
 # ]
 # ///
-from __future__ import annotations
-
 from argparse import ArgumentParser
 from dataclasses import dataclass
 from ipaddress import IPv4Address
 from ipaddress import IPv4Network
 from ipaddress import ip_interface
+import json
 import re
 import socket
+import struct
 import sys
 from typing import Any
-from urllib.error import HTTPError
-from urllib.error import URLError
 from urllib.parse import quote
 from urllib.request import urlopen
 
@@ -25,7 +26,7 @@ try:
     from rich.syntax import Syntax
     from rich.table import Table
 except ModuleNotFoundError:
-    from builtins import print
+    from builtins import print  # noqa: A004
 
     class Syntax(str):
         def __new__(cls, code: str, lexer: str):
@@ -50,10 +51,16 @@ except ModuleNotFoundError:
                 lines.append(" | ".join(row))
             return "\n".join(lines)
 
-CONTROL_PORT = 8010
-HTTP_PORT = 80
+
+# Port Auto-Detection State
+DETECTED_HTTP_PORT = 80
+DETECTED_CONTROL_PORT = 8002
+
+CONTROL_PORT = 8002
+HTTP_PORT = 8010
 HTTP_TIMEOUT_SEC = 5
 CONTROL_TIMEOUT_SEC = 5
+
 
 RETURN_MODE_NAME_TO_VALUE = {
     "Single": 1,
@@ -157,6 +164,7 @@ class ConfigInfo(CommandBase):
     frame_rate: float | str
     horizontal_roi: float | str
     vertical_roi: float | str
+    udp_field_count: int = 4
 
     def parse(self) -> dict[str, Any]:
         frame_rate = self.frame_rate
@@ -196,37 +204,155 @@ class StatusInfo(CommandBase):
         return self.status
 
 
-def raw_command(sensor_ip: str, command: str, timeout_sec: float = CONTROL_TIMEOUT_SEC) -> str:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(timeout_sec)
-        sock.connect((sensor_ip, CONTROL_PORT))
-        sock.sendall((command + "\n").encode())
+def download_binary_file(sensor_ip: str, cmd: str, filename: str) -> bool:
+    ports = [DETECTED_CONTROL_PORT, 8002, 8010]
+    ports = list(dict.fromkeys(ports))
 
-        reply = bytearray()
-        while True:
-            chunk = sock.recv(4096)
-            if not chunk:
-                break
-            reply.extend(chunk)
-            if b"\n\n" in reply:
-                break
+    for port in ports:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(10)
+                s.connect((sensor_ip, port))
+                s.sendall(cmd.encode("utf-8") + b"\n")
 
-    return reply.decode(errors="replace").strip()
+                # Protocol: 4 bytes big-endian length
+                header = s.recv(4)
+                if len(header) < 4:
+                    continue
+
+                length = struct.unpack(">I", header)[0]
+                if length == 0 or length > 20 * 1024 * 1024:  # 20MB limit
+                    continue
+
+                print(
+                    f"Downloading {filename} ({length} bytes) via Port {port}...",
+                    end=" ",
+                    flush=True,
+                )
+                data = bytearray()
+                while len(data) < length:
+                    chunk = s.recv(min(length - len(data), 65536))
+                    if not chunk:
+                        break
+                    data.extend(chunk)
+
+                if len(data) < length:
+                    print("Incomplete.")
+                    continue
+
+                # Optional: Read MD5 (32 bytes)
+                try:
+                    s.recv(32, socket.MSG_DONTWAIT)
+                except Exception:
+                    pass
+
+                with open(filename, "wb") as f:
+                    f.write(data)
+
+                print("Done.")
+                return True
+        except Exception:
+            continue
+    return False
 
 
-def http_get(sensor_ip: str, endpoint: str) -> str:
-    url = f"http://{sensor_ip}:{HTTP_PORT}{endpoint}"
-    try:
-        with urlopen(url, timeout=HTTP_TIMEOUT_SEC) as response:  # noqa: S310
-            return response.read().decode(errors="replace").strip()
-    except HTTPError as exc:
-        raise RuntimeError(f"HTTP {exc.code} for {endpoint}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"Failed to reach {url}") from exc
+def raw_command(sensor_ip: str, cmd: str) -> str:
+    global DETECTED_CONTROL_PORT
+    ports_to_try = [DETECTED_CONTROL_PORT, 8002, 8010]
+    ports_to_try = list(dict.fromkeys(ports_to_try))
+
+    for port in ports_to_try:
+        try:
+            # For 8010/80, try HTTP first as it's cleaner for modern sensors
+            if port in [80, 8010] and not cmd.startswith("set_network"):
+                try:
+                    return http_get(sensor_ip, f"/command/?{cmd}", port=port, as_bytes=False)
+                except Exception:
+                    pass
+
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(HTTP_TIMEOUT_SEC)
+                s.connect((sensor_ip, port))
+                s.sendall(cmd.encode("utf-8") + b"\n")
+
+                reply = bytearray()
+                while True:
+                    chunk = s.recv(4096)
+                    if not chunk:
+                        break
+                    reply.extend(chunk)
+                    if b"\n\n" in reply:
+                        break
+
+                if reply:
+                    DETECTED_CONTROL_PORT = port
+                    resp = reply.decode("utf-8", errors="ignore").strip()
+                    return resp
+        except Exception as e:
+            _ = e  # suppress F841
+            continue
+
+    return ""
+
+
+def http_get(
+    sensor_ip: str, path_and_query: str, port: int | None = None, as_bytes: bool = False
+) -> str | bytes:
+    global DETECTED_HTTP_PORT
+    if port:
+        ports_to_try = [port]
+    else:
+        ports_to_try = [DETECTED_HTTP_PORT, 80, 8010]
+        # Remove duplicates but keep order
+        ports_to_try = list(dict.fromkeys(ports_to_try))
+
+    for port in ports_to_try:
+        url = f"http://{sensor_ip}:{port}{path_and_query}"
+        try:
+            with urlopen(url, timeout=HTTP_TIMEOUT_SEC) as response:
+                data = response.read()
+
+                # Filter out generic HTML (e.g., from port 80 index)
+                if not as_bytes:
+                    try:
+                        text = data.decode("utf-8")
+                    except UnicodeDecodeError:
+                        text = data.decode("latin1")
+
+                    if "<html" in text.lower() and "model:" not in text and "sn:" not in text:
+                        continue
+
+                    DETECTED_HTTP_PORT = port
+                    return text
+                else:
+                    DETECTED_HTTP_PORT = port
+                    return data
+        except Exception as e:
+            _ = e  # suppress F841
+            continue
+
+    if as_bytes:
+        return b""
+    return ""
 
 
 def get_http_attribute(sensor_ip: str, name: str) -> str:
-    return http_get(sensor_ip, f"/command/?get_{quote(name)}")
+    return http_get(sensor_ip, f"/command/?{quote(name)}")
+
+
+def trigger_streaming(sensor_ip: str, data_port: int = 2371) -> bool:
+    print(f"Triggering active stream (port {data_port})...", end=" ", flush=True)
+    try:
+        # Try both TCP and pseudo-HTTP triggers found in SDK
+        raw_command(sensor_ip, "start")
+        raw_command(sensor_ip, f"start direct {data_port}")
+        raw_command(sensor_ip, f"set_attribute udp_raw_port={data_port}")
+        raw_command(sensor_ip, "GET /start/ HTTP/1.0\r\n\r\n")
+        print("Done")
+        return True
+    except Exception as e:
+        print(f"Skipped ({e})")
+        return False
 
 
 def set_http_attribute(sensor_ip: str, name: str, value: str) -> None:
@@ -281,30 +407,87 @@ def is_same_subnet(destination_ip: str, sensor_ip: str, mask: str) -> bool:
     )
 
 
-def extract_ipv4s(reply: str) -> list[str]:
-    return re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", reply)
+def parse_network(raw_network: str, sensor_ip: str) -> tuple[str, str, str]:
+    if not raw_network:
+        return sensor_ip, "255.255.255.0", "0.0.0.0"
 
+    # Handle JSON format (modern sensors like E1X)
+    try:
+        data = json.loads(raw_network)
+        if "response" in data and "IPv4" in data["response"]:
+            ipv4 = data["response"]["IPv4"]
+            return (
+                ipv4.get("IP", sensor_ip),
+                ipv4.get("NETWORK", "255.255.255.0"),
+                ipv4.get("GATEWAY", "0.0.0.0"),
+            )
+    except Exception:
+        pass
 
-def parse_network(reply: str, fallback_sensor_ip: str) -> tuple[str, str, str]:
-    ips = extract_ipv4s(reply)
-    sensor_ip = fallback_sensor_ip
+    # Handle Key=Value space-separated (HTTP 8010 format)
+    if "IP=" in raw_network:
+        parts = {p.split("=")[0]: p.split("=")[1] for p in raw_network.split() if "=" in p}
+        return (
+            parts.get("IP", sensor_ip),
+            parts.get("netmask", "255.255.255.0"),
+            parts.get("gateway", "0.0.0.0"),
+        )
+
+    # Handle INI format
+    ip = sensor_ip
     mask = "255.255.255.0"
     gateway = "0.0.0.0"
-    if len(ips) >= 1:
-        sensor_ip = ips[0]
-    if len(ips) >= 2:
-        mask = ips[1]
-    if len(ips) >= 3:
-        gateway = ips[2]
-    return sensor_ip, mask, gateway
+    for line in raw_network.splitlines():
+        if "IP =" in line:
+            ip = clean_value(line, "IP =")
+        if "mask =" in line:
+            mask = clean_value(line, "mask =")
+        if "gateway =" in line:
+            gateway = clean_value(line, "gateway =")
+    return ip, mask, gateway
 
 
-def parse_udp_ports_ip(reply: str) -> tuple[int, int, int, str]:
-    fields = [field.strip() for field in reply.split(",")]
-    if len(fields) < 4:
-        raise ValueError(f"Unexpected udp_ports_ip reply: {reply}")
+def parse_udp_ports_ip(reply: str) -> tuple[int, int, int, str, str, str, int]:
+    # Formats:
+    # 1. JSON (Robin E1X 8002)
+    # 2. Key=Value
+    # 3. Space/Comma separated (Legacy/PCS)
 
-    return int(fields[0]), int(fields[1]), int(fields[2]), fields[3]
+    if "{" in reply:
+        try:
+            data = json.loads(reply)
+            if "response" in data:
+                r = data["response"]
+                return 0, 0, 0, r.get("IP", ""), "", "", 1
+        except Exception:
+            pass
+
+    fields = reply.replace(",", " ").split()
+    try:
+        if len(fields) >= 6:
+            return (
+                int(fields[0]),
+                int(fields[1]),
+                int(fields[2]),
+                fields[3],
+                fields[4],
+                fields[5],
+                len(fields),
+            )
+        if len(fields) >= 4:
+            return (
+                int(fields[0]),
+                int(fields[1]),
+                int(fields[2]),
+                fields[3],
+                "0.0.0.0",
+                "0.0.0.0",
+                len(fields),
+            )
+    except (ValueError, IndexError):
+        pass
+
+    return 0, 0, 0, "", "", "", 0
 
 
 def parse_roi(reply: str) -> tuple[float, float]:
@@ -313,6 +496,15 @@ def parse_roi(reply: str) -> tuple[float, float]:
 
 
 def parse_i_config_value(reply: str, section: str, key: str) -> str:
+    # Try JSON first (modern sensors like Robin E1X)
+    try:
+        data = json.loads(reply)
+        if "response" in data and key in data["response"]:
+            return str(data["response"][key])
+    except (json.JSONDecodeError, KeyError, TypeError):
+        pass
+
+    # Fallback to INI pattern (older sensors)
     pattern = rf"\[{re.escape(section)}\]\s+{re.escape(key)}\s*=\s*(.+)"
     match = re.search(pattern, reply, flags=re.MULTILINE)
     if not match:
@@ -328,9 +520,15 @@ def parse_status(reply: str) -> dict[str, str]:
             continue
         value = match.group(1)
         if source_key == "time_config":
-            value = SYNC_MODE_VALUE_TO_NAME.get(int(value, 0), value)
+            try:
+                value = SYNC_MODE_VALUE_TO_NAME.get(int(float(value)), value)
+            except ValueError:
+                pass
         elif source_key == "up_time":
-            value = f"{int(value, 0)} s"
+            try:
+                value = f"{int(float(value))} s"
+            except ValueError:
+                pass
         values[output_key] = value
 
     if not values:
@@ -338,35 +536,123 @@ def parse_status(reply: str) -> dict[str, str]:
     return values
 
 
+def parse_mode_status(reply: str) -> dict[str, str]:
+    # Format: 3,2,2,379 (Mode, PreMode, Status, TransitionMs)
+    fields = reply.split(",")
+    if len(fields) >= 3:
+        try:
+            mode = int(fields[0])
+            status = int(fields[2])
+
+            # Mapping from SDK
+            mode_name = {
+                1: "Sleep",
+                2: "Standby",
+                3: "WorkNormal",
+                4: "ShortRange",
+                5: "Calibration",
+                6: "Protection",
+            }.get(mode, f"Mode({mode})")
+
+            status_name = {0: "None", 1: "Transition", 2: "Normal", 3: "Failed"}.get(
+                status, f"Status({status})"
+            )
+
+            # Map to standard numeric status for compatibility with main script logic
+            # 1 = Streaming/Normal, 0 = Idle/Standby
+            std_status = "1" if status == 2 else "0"
+
+            return {
+                "mode": mode_name,
+                "stream_status": std_status,
+                "status_text": status_name,
+                "transition_ms": fields[3] if len(fields) > 3 else "0",
+            }
+        except (ValueError, IndexError):
+            pass
+    return {}
+
+
+def clean_value(value: str, prefix: str) -> str:
+    if value.lower().startswith(prefix.lower()):
+        return value[len(prefix) :].strip()
+    return value
+
+
+def parse_version(raw_version: str) -> str:
+    for line in raw_version.splitlines():
+        if "App Version:" in line:
+            return clean_value(line, "App Version:")
+        if "Firmware Version:" in line:
+            return clean_value(line, "Firmware Version:")
+    return raw_version
+
+
 def read_device_info(sensor_ip: str) -> DeviceInfo:
+    # Prefer HTTP for basic info as it's more stable across firmware versions
+    try:
+        model_raw = get_http_attribute(sensor_ip, "model")
+        sn_raw = get_http_attribute(sensor_ip, "sn")
+        version_raw = get_http_attribute(sensor_ip, "fw_version")
+    except Exception:
+        # Fallback to raw TCP if HTTP fails
+        model_raw = raw_command(sensor_ip, "get_model")
+        sn_raw = raw_command(sensor_ip, "get_sn")
+        version_raw = raw_command(sensor_ip, "get_version")
+
     return DeviceInfo(
-        model=raw_command(sensor_ip, "get_model"),
-        serial_number=raw_command(sensor_ip, "get_sn"),
-        fw_version=raw_command(sensor_ip, "get_fw_version"),
+        model=clean_value(model_raw, "model:"),
+        serial_number=clean_value(sn_raw, "serial number:"),
+        fw_version=parse_version(version_raw),
     )
 
 
 def read_config_info(sensor_ip: str) -> ConfigInfo:
-    current_sensor_ip, mask, gateway = parse_network(raw_command(sensor_ip, "get_network"), sensor_ip)
-    data_port, message_port, status_port, destination_ip = parse_udp_ports_ip(
-        get_http_attribute(sensor_ip, "udp_ports_ip")
+    current_sensor_ip, mask, gateway = parse_network(
+        raw_command(sensor_ip, "get_network"), sensor_ip
+    )
+    raw_udp_reply = get_http_attribute(sensor_ip, "udp_ports_ip")
+    data_port, message_port, status_port, destination_ip, dest_ip2, source_ip, field_count = (
+        parse_udp_ports_ip(raw_udp_reply)
     )
     horizontal_roi, vertical_roi = parse_roi(get_http_attribute(sensor_ip, "roi"))
     reflectance_mode_raw = get_http_attribute(sensor_ip, "reflectance_mode")
     reflectance_mode = REFLECTANCE_MODE_VALUE_TO_NAME.get(
-        int(reflectance_mode_raw),
+        int(float(reflectance_mode_raw)),
         reflectance_mode_raw,
     )
     return_mode_raw = get_http_attribute(sensor_ip, "return_mode")
     return_mode = RETURN_MODE_VALUE_TO_NAME.get(
-        int(return_mode_raw),
+        int(float(return_mode_raw)),
         return_mode_raw,
     )
     time_sync = SYNC_MODE_VALUE_TO_NAME.get(
-        int(parse_i_config_value(raw_command(sensor_ip, "get_i_config time time_stamping"), "time", "time_stamping")),
+        int(
+            float(
+                parse_i_config_value(
+                    raw_command(sensor_ip, "get_i_config time time_stamping"),
+                    "time",
+                    "time_stamping",
+                )
+            )
+        ),
         "Unknown",
     )
-    frame_rate = float(raw_command(sensor_ip, "get_framerate"))
+    device_model = clean_value(raw_command(sensor_ip, "get_model"), "model:")
+    if device_model == "h":
+        frame_rate_raw = parse_i_config_value(
+            raw_command(sensor_ip, "get_i_config spad frame_rate"), "spad", "frame_rate"
+        )
+    else:
+        frame_rate_raw = raw_command(sensor_ip, "get_framerate")
+
+    if not frame_rate_raw:
+        frame_rate = 10.0  # Fallback
+    else:
+        try:
+            frame_rate = float(frame_rate_raw)
+        except ValueError:
+            frame_rate = 10.0
 
     return ConfigInfo(
         sensor_ip=current_sensor_ip,
@@ -382,11 +668,25 @@ def read_config_info(sensor_ip: str) -> ConfigInfo:
         frame_rate=frame_rate,
         horizontal_roi=horizontal_roi,
         vertical_roi=vertical_roi,
+        udp_field_count=field_count,
     )
 
 
 def read_status_info(sensor_ip: str) -> StatusInfo:
-    return StatusInfo(parse_status(raw_command(sensor_ip, "get_status")))
+    # Try get_status first (older sensors)
+    reply = raw_command(sensor_ip, "get_status")
+    if reply and "stream_status" in reply:
+        return StatusInfo(parse_status(reply))
+
+    # Try get_mode_status (modern sensors like Robin E1X)
+    reply_mode = http_get(sensor_ip, "/command/?get_mode_status")
+    if reply_mode:
+        res = parse_mode_status(reply_mode)
+        if res:
+            return StatusInfo(res)
+
+    # Fallback to whatever raw reply we got
+    return StatusInfo({"raw": reply if reply else "No response"})
 
 
 def validate_port(name: str, port: int | None) -> None:
@@ -411,9 +711,15 @@ if __name__ == "__main__":
         frame_rate: float | None
         horizontal_roi: float | None
         vertical_roi: float | None
+        model: str
+        download: bool
+        stop: bool  # Restored
+        start: bool  # Ensure start is here too
 
     parser = ArgumentParser()
-    parser.add_argument("--sensor-ip", type=str, required=True, help="The current sensor IP address")
+    parser.add_argument(
+        "--sensor-ip", type=str, required=True, help="The current sensor IP address"
+    )
     parser.add_argument(
         "--destination-ip",
         type=str,
@@ -440,7 +746,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--new-sensor-ip",
+        "--new-ip",
         type=str,
+        dest="new_sensor_ip",
         default=None,
         help="Change the current sensor IP address to the given one",
     )
@@ -495,6 +803,31 @@ if __name__ == "__main__":
         default=None,
         help="Change the vertical ROI to the given value in degrees",
     )
+    parser.add_argument(
+        "--reboot",
+        action="store_true",
+        help="Reboot the sensor after applying changes",
+    )
+    parser.add_argument(
+        "--download",
+        action="store_true",
+        help="Download calibration and angle table files from the sensor",
+    )
+    parser.add_argument(
+        "--keep-alive",
+        action="store_true",
+        help="Keep TCP connection open after starting stream",
+    )
+    parser.add_argument(
+        "--start",
+        action="store_true",
+        help="Enable PCS and set mode to WorkNormal (start streaming)",
+    )
+    parser.add_argument(
+        "--stop",
+        action="store_true",
+        help="Disable PCS (stop streaming)",
+    )
 
     args = parser.parse_args(namespace=NameSpace)
 
@@ -522,7 +855,10 @@ if __name__ == "__main__":
 
     if args.return_mode is not None and args.return_mode not in RETURN_MODE_NAME_TO_VALUE:
         raise ValueError("Invalid return mode. Use Single, Dual, StrongestFurthest, 1, 2, or 3.")
-    if args.reflectance_mode is not None and args.reflectance_mode not in REFLECTANCE_MODE_NAME_TO_VALUE:
+    if (
+        args.reflectance_mode is not None
+        and args.reflectance_mode not in REFLECTANCE_MODE_NAME_TO_VALUE
+    ):
         raise ValueError("Invalid reflectance mode. Use None, Intensity, Reflectivity, 0, 1, or 2.")
     if args.time_sync is not None and args.time_sync not in SYNC_MODE_NAME_TO_VALUE:
         raise ValueError("Invalid time sync mode. Use Host, PTP, GPS, File, NTP, or 0-4.")
@@ -532,6 +868,7 @@ if __name__ == "__main__":
     device_info = read_device_info(args.sensor_ip)
     device_info.print(title="Device Info")
     print()
+    args.model = device_info.model  # Populate args.model
 
     config_info = read_config_info(args.sensor_ip)
     config_info.print(title="Config Info")
@@ -571,86 +908,34 @@ if __name__ == "__main__":
     horizontal_roi = current_horizontal_roi if args.horizontal_roi is None else args.horizontal_roi
     vertical_roi = current_vertical_roi if args.vertical_roi is None else args.vertical_roi
 
-    if (
-        args.destination_ip is not None
-        or args.data_port is not None
-        or args.message_port is not None
-        or args.status_port is not None
-    ):
-        if not is_same_subnet(destination_ip, new_sensor_ip, mask):
-            raise ValueError(
-                f"Destination IP {destination_ip} is not in the same subnet as the sensor IP {new_sensor_ip}. "
-                f"The net mask is {mask}."
-            )
+    # Start configuring sequence
+    pcs_stopped = False
+    config_needed = (
+        args.destination_ip
+        or args.data_port
+        or args.message_port
+        or args.status_port
+        or args.new_sensor_ip
+        or args.mask
+        or args.gateway
+        or args.return_mode
+        or args.reflectance_mode
+        or args.time_sync
+        or args.frame_rate
+        or args.horizontal_roi
+        or args.vertical_roi
+    )
 
-        print(
-            "Changing destination IP/data_port/message_port/status_port from "
-            f"{current_destination_ip}:{current_data_port}:{current_message_port}:{current_status_port} to "
-            f"{destination_ip}:{data_port}:{message_port}:{status_port}...",
-            end=" ",
-            flush=True,
-        )
-        set_http_attribute(
-            args.sensor_ip,
-            "udp_ports_ip",
-            f"{data_port},{message_port},{status_port},{destination_ip}",
-        )
-        print("Done")
+    if config_needed and not args.stop and not args.start:
+        print("Stopping PCS for configuration...", end=" ", flush=True)
+        try:
+            set_http_attribute(args.sensor_ip, "enabled", "0")
+            pcs_stopped = True
+            print("Done")
+        except Exception:
+            print("Failed (continuing anyway)")
 
-    if args.return_mode is not None:
-        print(
-            f"Changing return_mode from {current_return_mode} to {return_mode}...",
-            end=" ",
-            flush=True,
-        )
-        set_http_attribute(args.sensor_ip, "return_mode", str(RETURN_MODE_NAME_TO_VALUE[return_mode]))
-        print("Done")
-
-    if args.reflectance_mode is not None:
-        print(
-            f"Changing reflectance_mode from {current_reflectance_mode} to {reflectance_mode}...",
-            end=" ",
-            flush=True,
-        )
-        set_http_attribute(
-            args.sensor_ip,
-            "reflectance_mode",
-            str(REFLECTANCE_MODE_NAME_TO_VALUE[reflectance_mode]),
-        )
-        print("Done")
-
-    if args.time_sync is not None:
-        print(
-            f"Changing time_sync from {current_time_sync} to {time_sync}...",
-            end=" ",
-            flush=True,
-        )
-        raw_command(
-            args.sensor_ip,
-            f"set_i_config time time_stamping {SYNC_MODE_NAME_TO_VALUE[time_sync]}",
-        )
-        print("Done")
-
-    if args.frame_rate is not None:
-        print(
-            f"Changing frame_rate from {current_frame_rate:.5f} to {frame_rate:.5f}...",
-            end=" ",
-            flush=True,
-        )
-        raw_command(args.sensor_ip, f"set_i_config motor galvo_framerate {frame_rate:.6f}")
-        print("Done")
-
-    if args.horizontal_roi is not None or args.vertical_roi is not None:
-        print(
-            "Changing horizontal_roi/vertical_roi from "
-            f"{current_horizontal_roi:.6f}:{current_vertical_roi:.6f} to "
-            f"{horizontal_roi:.6f}:{vertical_roi:.6f}...",
-            end=" ",
-            flush=True,
-        )
-        set_http_attribute(args.sensor_ip, "roi", f"{horizontal_roi:.6f},{vertical_roi:.6f}")
-        print("Done")
-
+    # 1. Network settings first (affects subnet validation)
     if args.new_sensor_ip is not None or args.mask is not None or args.gateway is not None:
         if not yesno(
             "Are you sure you want to change the sensor network settings from "
@@ -660,28 +945,290 @@ if __name__ == "__main__":
             print("Aborted")
             sys.exit(0)
 
+        # Determine if we should use dotted decimal (E1X/E2X) or octets (Legacy)
+        is_modern = (
+            "ROBIN" in args.model.upper()
+            or "E1X" in args.model.upper()
+            or "E2X" in args.model.upper()
+        )
+        netmask = mask
+
+        if is_modern:
+            net_cmd = f"set_network {new_sensor_ip} {netmask} {gateway}"
+        else:
+            net_cmd = (
+                "set_network "
+                + " ".join(new_sensor_ip.split("."))
+                + " "
+                + " ".join(netmask.split("."))
+                + " "
+                + " ".join((gateway if gateway else "0.0.0.0").split("."))
+            )
+
+        print(f"Applying: {net_cmd}...", end=" ")
+        raw_command(args.sensor_ip, net_cmd)
+
+        # Follow up with network save if on port 8010 or 8002
+        try:
+            # Try multiple save variants for compatibility
+            set_http_attribute(args.sensor_ip, "save_network", "1")
+            raw_command(args.sensor_ip, "save_config")
+            print("(Saved)", end=" ")
+        except Exception as e:
+            print(f"(Save attempted: {e})", end=" ")
+
+        print("Done")
+
+    # 4. Download Calibration Files
+    if args.download:
+        print("\n[bold blue]Downloading Calibration Files...[/bold blue]")
+        is_modern = (
+            "ROBIN" in args.model.upper()
+            or "E1X" in args.model.upper()
+            or "E2X" in args.model.upper()
+        )
+
+        # 1. Try anglehv_table via HTTP (prefer 8010)
+        try:
+            print("Checking anglehv_table...", end=" ", flush=True)
+            table_data = http_get(
+                args.sensor_ip,
+                "/command/?get_anglehv_table",
+                port=DETECTED_HTTP_PORT if DETECTED_HTTP_PORT != 80 else 8010,
+                as_bytes=True,
+            )
+            if table_data:
+                with open("anglehv_table.bin", "wb") as f:
+                    # If it's pure binary, write it; if it's hex, decode it
+                    is_hex = False
+                    if len(table_data) < 1000:
+                        try:
+                            is_hex = all(
+                                c in bytes(b"0123456789abcdefABCDEF \n\r") for c in table_data[:100]
+                            )
+                        except Exception:
+                            pass
+
+                    if is_hex and b" " in table_data:
+                        f.write(
+                            bytes.fromhex(
+                                table_data.decode("ascii")
+                                .replace(" ", "")
+                                .replace("\n", "")
+                                .replace("\r", "")
+                            )
+                        )
+                    else:
+                        f.write(table_data)
+                print(f"Done (saved {len(table_data)} bytes to anglehv_table.bin)")
+            else:
+                print("Not found.")
+        except Exception as e:
+            print(f"Skipped ({e})")
+
+        # 2. Try geo_yaml (cal file 0) via TCP
+        success = download_binary_file(
+            args.sensor_ip, "download_cal_file 0", "geo_calibration.yaml"
+        )
+        if not success:
+            # Try variant
+            download_binary_file(args.sensor_ip, "get_geo_yaml", "geo_calibration.yaml")
+
+        # 3. Try sn.yaml (cal file 1)
+        download_binary_file(args.sensor_ip, "download_cal_file 1", "sn_calibration.yaml")
+
+    # 5. Summary
+    # 2. Destination settings (can depend on subnet)
+    if args.destination_ip or args.data_port or args.message_port or args.status_port:
         print(
-            f"Changing sensor network settings from {current_sensor_ip}/{current_mask} gw={current_gateway} "
-            f"to {new_sensor_ip}/{mask} gw={gateway}...",
+            "Changing destination IP/data_port/message_port/status_port from "
+            f"{current_destination_ip}:{current_data_port}:{current_message_port}:{current_status_port} to "
+            f"{destination_ip}:{data_port}:{message_port}:{status_port}...",
             end=" ",
             flush=True,
         )
-        raw_command(
-            args.sensor_ip,
-            "set_network "
-            + " ".join(new_sensor_ip.split("."))
-            + " "
-            + " ".join(mask.split("."))
-            + " "
-            + " ".join((gateway if gateway else "0.0.0.0").split(".")),
-        )
-        print("Done")
 
-        print()
+        # Subnet check for destination against current OR new network
+        active_sensor_ip = new_sensor_ip
+        active_mask = mask
+        if not is_same_subnet(destination_ip, active_sensor_ip, active_mask):
+            print(
+                f"\n[bold yellow]Warning:[/bold yellow] Destination IP {destination_ip} is not in the same subnet as sensor {active_sensor_ip}/{active_mask}."
+            )
+            print("The sensor may reject this setting with HTTP 400 if it cannot route to it.\n")
+
+        # Try preferred format based on current field count
+        formats = []
+        # Modern sensors (E1X) often prefer 6 fields,
+        # but Falcon-based (Hummingbird/Robin) prefer 4 or even 3.
+        # Force 4-field if not E1X to be safe (matching nebula driver)
+        if config_info.udp_field_count >= 6:
+            formats = [
+                f"{data_port},{message_port},{status_port},{destination_ip},{destination_ip},{config_info.sensor_ip}",
+                f"{data_port},{message_port},{status_port},{destination_ip}",
+            ]
+        else:
+            formats = [f"{data_port},{message_port},{status_port},{destination_ip}"]
+
+        success = False
+        last_err = ""
+        for params in formats:
+            try:
+                set_http_attribute(args.sensor_ip, "udp_ports_ip", params)
+                success = True
+                break
+            except Exception as e:
+                last_err = str(e)
+                continue
+
+        if success:
+            print("Done")
+        else:
+            print(f"Failed: {last_err}")
+            if "400" in last_err:
+                print("Suggestion: Ensure the sensor and destination are in the same subnet.")
+
         print(
             f"Make sure the new sensor network settings are successfully applied for {new_sensor_ip}/{mask} gw={gateway} by the following command"
         )
         print(Syntax(f"python3 {sys.argv[0]} --sensor-ip {new_sensor_ip}", "console"))
+
+    if pcs_stopped or args.start:
+        print("Starting PCS sequence...", end=" ", flush=True)
+        # Ensure destination is set BEFORE enabled=1 for Falcon sensors
+        try:
+            dp = args.data_port or 2371
+            # Aggressive network push
+            raw_command(
+                args.sensor_ip,
+                f"set_attribute udp_ports_ip={dp},{dp},{dp},{args.new_destination_ip or config_info.destination_ip}",
+            )
+        except Exception:
+            pass
+
+        # Aggressive enabled
+        try:
+            set_http_attribute(args.sensor_ip, "enabled", "1")
+        except Exception:
+            pass
+        try:
+            raw_command(args.sensor_ip, "set_attribute enabled=1")
+        except Exception:
+            pass
+
+        print("Done")
+        import time
+
+        time.sleep(1)  # Give PCS time to initialize
+
+        print("Setting WorkNormal mode...", end=" ", flush=True)
+        # Try 3 (SDK standard), then 1 (Old/Nebula standard) if 3 fails
+        try:
+            set_http_attribute(args.sensor_ip, "mode", "3")
+            print("Done (mode=3)")
+        except Exception as e3:
+            try:
+                set_http_attribute(args.sensor_ip, "mode", "1")
+                print("Done (mode=1 fallback)")
+            except Exception as e1:
+                # Try raw command fallback
+                try:
+                    raw_command(args.sensor_ip, "set_attribute mode=3")
+                    print("Done (TCP mode=3)")
+                except Exception:
+                    print(f"Failed: SDK mode=3: {e3}, Nebula mode=1: {e1}")
+
+        # Active trigger for Falcon-based sensors (Hummingbird)
+        # Use data port from config if available
+        dp = args.data_port or 2371
+        trigger_streaming(args.sensor_ip, data_port=dp)
+
+        if args.keep_alive:
+            print(f"\n[KEEP-ALIVE] Maintaining control connection to {args.sensor_ip}...")
+            print("[KEEP-ALIVE] Press Ctrl+C to stop streaming.")
+            try:
+                # We need to keep the socket that trigger_streaming used?
+
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(10)
+                    s.connect((args.sensor_ip, 8002))
+                    # Periodically send a NOP or get_status to prevent timeout
+                    while True:
+                        s.sendall(b"get_status\n")
+                        s.recv(1024)
+                        time.sleep(2)
+            except KeyboardInterrupt:
+                print("\nStopping stream...")
+                raw_command(args.sensor_ip, "stop")
+            except Exception as e:
+                print(f"[KEEP-ALIVE] Connection lost: {e}")
+
+    if args.stop:
+        print("Stopping PCS...", end=" ", flush=True)
+        try:
+            set_http_attribute(args.sensor_ip, "enabled", "0")
+            print("Done")
+        except Exception as e:
+            print(f"Failed: {e}")
+
+    print("\nFinal State Verification:")
+    try:
+        final_config = read_config_info(args.sensor_ip)
+        final_status = read_status_info(args.sensor_ip)
+        print(f"  Sensor IP:     {final_config.sensor_ip}")
+        print(f"  Subnet Mask:   {final_config.mask}")
+        print(f"  Destination:   {final_config.destination_ip}:{final_config.data_port}")
+        print(
+            f"  Stream Status: [bold cyan]{final_status.status.get('stream_status', 'Unknown')}[/bold cyan]"
+        )
+        print(f"  Data Sent:     {final_status.status.get('data_sent', '0')}")
+
+        raw_status = final_status.status.get("stream_status")
+        status_text = final_status.status.get("status_text", "")
+
+        is_streaming = raw_status in ["1", "3"] or status_text == "Normal"
+        is_ready = raw_status == "2" and status_text != "Normal"
+        is_idle = raw_status == "0" or status_text in ["Standby", "Sleep"]
+
+        if is_streaming:
+            print("\n[bold green]Success: Sensor is reported as streaming![/bold green]")
+        elif is_ready:
+            print(
+                "\n[bold yellow]Note:[/bold yellow] Stream status is [bold]READY[/bold]. Sensor is initialized but NOT yet transmitting."
+            )
+            if final_config.destination_ip == "0.0.0.0":
+                print(
+                    "[bold red]Action Required:[/bold red] Destination IP is still 0.0.0.0. The sensor requires a valid destination to stream."
+                )
+            else:
+                print(
+                    "Suggestion: Ensure the Lidar mode is 'WorkNormal' (mode=3) and check for any hardware errors."
+                )
+        elif is_idle:
+            print("\n[bold yellow]Note:[/bold yellow] Stream status is [bold]IDLE[/bold].")
+            print(
+                "Troubleshooting: Check if the Lidar is in 'Standby' in the Web UI or try manually toggling PCS."
+            )
+        else:
+            print(f"\nStream status is {raw_status} (Unknown).")
+            if status_text:
+                print(f"Status Text: {status_text}")
+    except Exception as e:
+        print(f"  Could not verify final status: {e}")
+
+    if args.reboot:
+        print(f"Rebooting sensor {args.sensor_ip}...", end=" ", flush=True)
+        try:
+            set_http_attribute(args.sensor_ip, "reboot", "1")
+            print("Done")
+        except Exception as e:
+            print(f"Failed: {e}")
+            # Try raw command on 8002 as fallback
+            try:
+                raw_command(args.sensor_ip, "reboot 1")
+                print("Done (via raw command)")
+            except Exception:
+                print("Failed completely")
 
     if any(
         value is not None
@@ -701,7 +1248,9 @@ if __name__ == "__main__":
             args.vertical_roi,
         )
     ):
-        table = Table("Parameter", "Old", "New", title="What's Changed", highlight=True, min_width=50)
+        table = Table(
+            "Parameter", "Old", "New", title="What's Changed", highlight=True, min_width=50
+        )
 
         if new_sensor_ip != current_sensor_ip:
             table.add_row("sensor_ip", str(current_sensor_ip), str(new_sensor_ip))
