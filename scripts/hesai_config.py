@@ -354,9 +354,7 @@ if __name__ == "__main__":
     for port_name in ("data_port", "gps_port"):
         port = getattr(args, port_name)
         if port is not None and (port < 0 or 65535 < port):
-            raise ValueError(
-                f"Invalid {port_name} {port}. It must be in the range of 0 to 65535."
-            )
+            raise ValueError(f"Invalid {port_name} {port}. It must be in the range of 0 to 65535.")
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(5)
@@ -373,8 +371,13 @@ if __name__ == "__main__":
 
         print()
 
-        ptp_config = get_ptp_config(sock)
-        ptp_config.print(title="PTP Config (0x26)")
+        try:
+            ptp_config = get_ptp_config(sock)
+            ptp_config.print(title="PTP Config (0x26)")
+        except struct.error:
+            print(
+                "[yellow]PTP Config (0x26): Not supported on this sensor model or firmware.[/yellow]"
+            )
 
         print()
 
@@ -395,7 +398,11 @@ if __name__ == "__main__":
         gateway = current_gateway if args.gateway is None else args.gateway
 
         # Set Destination IP (0x20)
-        if args.destination_ip is not None or args.data_port is not None or args.gps_port is not None:
+        if (
+            args.destination_ip is not None
+            or args.data_port is not None
+            or args.gps_port is not None
+        ):
             if not is_same_subnet(destination_ip, args.sensor_ip, mask):
                 raise ValueError(
                     f"Destination IP {destination_ip} is not in the same subnet as the sensor IP {args.sensor_ip}."
