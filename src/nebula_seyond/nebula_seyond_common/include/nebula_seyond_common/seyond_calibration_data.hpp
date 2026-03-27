@@ -43,6 +43,10 @@ struct SeyondCalibrationData
   double v_angle_offset{0.0};
   /// @brief Raw binary anglehv_table fetched from sensor (or loaded from file)
   std::vector<uint8_t> angle_hv_table{};
+  /// @brief Raw binary geo_yaml fetched from sensor (Falcon/Robin modern)
+  std::vector<uint8_t> geo_yaml{};
+  /// @brief Raw binary sn_yaml fetched from sensor (Falcon/Robin modern)
+  std::vector<uint8_t> sn_yaml{};
 
   /// @brief Load calibration data from a binary file
   static util::expected<SeyondCalibrationData, Error> load_from_file(
