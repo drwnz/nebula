@@ -65,9 +65,30 @@ bool SeyondHwInterface::is_falcon_sensor() const
          sensor_config_.sensor_model == SeyondSensorModel::FALCON_K;
 }
 
+bool SeyondHwInterface::uses_six_field_udp_ports_ip() const
+{
+  return !is_falcon_sensor();
+}
+
+std::string SeyondHwInterface::build_udp_ports_ip_value(
+  const SeyondConnectionConfiguration & config) const
+{
+  std::ostringstream network_val;
+  network_val << config.udp_port << ',' << config.udp_message_port << ',' << config.udp_status_port
+              << ',' << config.host_ip;
+
+  if (uses_six_field_udp_ports_ip()) {
+    network_val << ',' << config.host_ip << ',' << config.sensor_ip;
+  }
+
+  return network_val.str();
+}
+
 Status SeyondHwInterface::download_binary_file(
   const std::string & command, std::vector<uint8_t> & output)
 {
+  output.clear();
+
   try {
     auto socket =
       connections::TcpSocket::Builder(sensor_config_.connection.sensor_ip, k_control_port)
@@ -86,23 +107,39 @@ Status SeyondHwInterface::download_binary_file(
     uint32_t length = (static_cast<uint32_t>(header[0]) << 24) |
                       (static_cast<uint32_t>(header[1]) << 16) |
                       (static_cast<uint32_t>(header[2]) << 8) | static_cast<uint32_t>(header[3]);
+    if (length == 0) {
+      return Status::ERROR_1;
+    }
 
-    output.clear();
     output.reserve(length);
 
     // Remaining data in first chunk
     if (header.size() > 4) {
-      output.insert(output.end(), header.begin() + 4, header.end());
+      const auto payload_end =
+        header.begin() + 4 + std::min<size_t>(length, static_cast<size_t>(header.size() - 4));
+      output.insert(output.end(), header.begin() + 4, payload_end);
     }
 
     while (output.size() < length) {
       auto chunk = socket.receive(std::chrono::milliseconds(2000));
-      if (chunk.empty()) break;
-      output.insert(output.end(), chunk.begin(), chunk.end());
+      if (chunk.empty()) {
+        output.clear();
+        return Status::ERROR_1;
+      }
+
+      const auto remaining = length - output.size();
+      output.insert(
+        output.end(), chunk.begin(), chunk.begin() + std::min<size_t>(remaining, chunk.size()));
+    }
+
+    if (output.size() != length) {
+      output.clear();
+      return Status::ERROR_1;
     }
 
     return Status::OK;
   } catch (const std::exception &) {
+    output.clear();
     return Status::ERROR_1;
   }
 }
@@ -136,14 +173,13 @@ Status SeyondHwInterface::sensor_interface_start()
           .set_buffer_size(4096)
           .connect());
 
-      std::string start_cmd = "start\n";
-      streaming_control_socket_->send(std::vector<uint8_t>(start_cmd.begin(), start_cmd.end()));
-
       std::string direct_cmd =
-        "start direct " + std::to_string(sensor_config_.connection.udp_port) + "\n";
+        "start direct " + std::to_string(sensor_config_.connection.udp_port) + '\n';
       streaming_control_socket_->send(std::vector<uint8_t>(direct_cmd.begin(), direct_cmd.end()));
     } catch (const std::exception &) {
-      // Falcon sensors may fail to stream without this persistent socket
+      streaming_control_socket_.reset();
+      udp_socket_.reset();
+      return Status::ERROR_1;
     }
   }
 
@@ -293,6 +329,18 @@ Status SeyondHwInterface::set_reflectance_mode(SeyondReflectanceMode reflectance
   return set_attribute("reflectance_mode", std::to_string(static_cast<int>(reflectance_mode)));
 }
 
+Status SeyondHwInterface::save_configuration()
+{
+  const auto http_status = set_attribute("save_network", "1");
+  const auto raw_status = send_raw_command("save_config");
+
+  if (http_status == Status::OK || raw_status == Status::OK) {
+    return Status::OK;
+  }
+
+  return raw_status != Status::OK ? raw_status : http_status;
+}
+
 Status SeyondHwInterface::set_return_mode(ReturnMode return_mode)
 {
   int return_val = 0;
@@ -339,8 +387,10 @@ SeyondHwInterface::get_calibration()
     if (
       sensor_config_.sensor_model == SeyondSensorModel::ROBIN_E1X ||
       sensor_config_.sensor_model == SeyondSensorModel::HUMMINGBIRD_D1) {
-      download_binary_file("get_geo_yaml", calibration.geo_yaml);
-      download_binary_file("get_sn_yaml", calibration.sn_yaml);
+      if (download_binary_file("download_cal_file 0", calibration.geo_yaml) != Status::OK) {
+        download_binary_file("get_geo_yaml", calibration.geo_yaml);
+      }
+      download_binary_file("download_cal_file 1", calibration.sn_yaml);
     }
   }
 
@@ -360,30 +410,10 @@ Status SeyondHwInterface::setup_sensor(const SeyondSensorConfiguration & config)
     return status;
   }
 
-  std::ostringstream network_val;
-  if (is_falcon_sensor()) {
-    // Falcon uses 4 fields: port, message_port, status_port, host_ip
-    network_val << config.connection.udp_port << ',' << config.connection.udp_message_port << ','
-                << config.connection.udp_status_port << ',' << config.connection.host_ip;
-  } else {
-    // Robin/Other use 6 fields: port, message_port, status_port, destination_ip, dest_ip2,
-    // source_ip
-    network_val << config.connection.udp_port << ',' << config.connection.udp_message_port << ','
-                << config.connection.udp_status_port << ',' << config.connection.host_ip << ','
-                << "0.0.0.0" << ',' << "192.168.1.10";
-  }
-  status = set_attribute("udp_ports_ip", network_val.str());
+  status = set_attribute("udp_ports_ip", build_udp_ports_ip_value(config.connection));
   if (status != Status::OK) {
     return status;
   }
-
-  // Force sensor state
-  set_attribute("mode", "3");
-  set_attribute("enabled", "1");
-
-  // Save changes for persistence
-  set_attribute("save_network", "1");  // Port 8010
-  send_raw_command("save_config");     // Port 8002
 
   status = set_reflectance_mode(config.reflectance_mode);
   if (status != Status::OK) {
@@ -414,6 +444,21 @@ Status SeyondHwInterface::setup_sensor(const SeyondSensorConfiguration & config)
     if (status != Status::OK) {
       return status;
     }
+  }
+
+  status = set_attribute("mode", "3");
+  if (status != Status::OK) {
+    return status;
+  }
+
+  status = set_attribute("enabled", "1");
+  if (status != Status::OK) {
+    return status;
+  }
+
+  status = save_configuration();
+  if (status != Status::OK) {
+    return status;
   }
 
   return Status::OK;
