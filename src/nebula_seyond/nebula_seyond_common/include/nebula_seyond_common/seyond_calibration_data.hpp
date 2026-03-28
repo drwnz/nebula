@@ -31,6 +31,60 @@
 namespace nebula::drivers
 {
 
+namespace detail
+{
+#pragma pack(push, 1)
+struct SeyondPacketCommonHeader
+{
+  uint16_t magic_number;
+  uint8_t major_version;
+  uint8_t minor_version;
+  uint16_t fw_sequence;
+  uint32_t checksum;
+  uint32_t size;
+  uint8_t source_id : 4;
+  uint8_t timestamp_sync_type : 4;
+  uint8_t lidar_type;
+  uint64_t ts_start_us;
+  uint8_t lidar_mode;
+  uint8_t lidar_status;
+};
+
+struct SeyondDataPacketHeader
+{
+  SeyondPacketCommonHeader common;
+  uint64_t idx;
+  uint16_t sub_idx;
+  uint16_t sub_seq;
+  uint32_t type : 8;
+  uint32_t item_number : 24;
+  uint16_t item_size;
+  uint32_t topic;
+  uint16_t scanner_direction : 1;
+  uint16_t use_reflectance : 1;
+  uint16_t multi_return_mode : 3;
+  uint16_t confidence_level : 2;
+  uint16_t is_last_sub_frame : 1;
+  uint16_t is_last_sequence : 1;
+  uint16_t has_tail : 1;
+  uint16_t frame_sync_locked : 1;
+  uint16_t is_first_sub_frame : 1;
+  uint16_t last_four_channel : 1;
+  uint16_t long_distance_mode : 1;
+  uint16_t reserved_flag : 2;
+  int16_t roi_h_angle;
+  int16_t roi_v_angle;
+  uint32_t extend_reserved[4];
+};
+#pragma pack(pop)
+
+constexpr uint16_t kSeyondDataPacketMagic = 0x176A;
+constexpr uint8_t kRobinWAngleHvTableType = 100;
+constexpr uint8_t kRobinE1XAngleHvTableType = 101;
+constexpr uint8_t kHummingbirdAngleHvTableType = 103;
+constexpr uint8_t kRobinE2XAngleHvTableType = 104;
+}  // namespace detail
+
 /// @brief Calibration data for Seyond LiDARs
 struct SeyondCalibrationData
 {
@@ -46,17 +100,17 @@ struct SeyondCalibrationData
   double v_angle_offset{0.0};
   /// @brief Raw binary anglehv_table fetched from sensor (or loaded from file)
   std::vector<uint8_t> angle_hv_table{};
-  /// @brief Raw binary geo_yaml fetched from sensor (Falcon/Robin modern)
+  /// @brief Raw binary geo yaml blob fetched from sensor (or loaded from file)
   std::vector<uint8_t> geo_yaml{};
-  /// @brief Raw binary sn_yaml fetched from sensor (Falcon/Robin modern)
+  /// @brief Raw binary serial-number yaml blob fetched from sensor (or loaded from file)
   std::vector<uint8_t> sn_yaml{};
 
   /// @brief Load calibration data from a binary file
   static util::expected<SeyondCalibrationData, Error> load_from_file(
     const std::string & calibration_file)
   {
-    constexpr std::array<char, 12> k_magic{
-      'S', 'E', 'Y', 'O', 'N', 'D', '_', 'C', 'A', 'L', 'I', 'B'};
+    constexpr std::array<char, 12> k_magic{'S', 'E', 'Y', 'O', 'N', 'D',
+                                           '_', 'C', 'A', 'L', 'I', 'B'};
 
     std::ifstream file(calibration_file, std::ios::binary);
     if (!file.is_open()) {
@@ -67,17 +121,15 @@ struct SeyondCalibrationData
 
     std::array<char, k_magic.size()> magic{};
     file.read(magic.data(), static_cast<std::streamsize>(magic.size()));
-    if (
-      file.good() &&
-      std::memcmp(magic.data(), k_magic.data(), k_magic.size()) == 0)
-    {
+    if (file.good() && std::memcmp(magic.data(), k_magic.data(), k_magic.size()) == 0) {
       uint32_t version = 0;
       uint32_t angle_size = 0;
       uint32_t geo_size = 0;
       uint32_t sn_size = 0;
 
       file.read(reinterpret_cast<char *>(&version), sizeof(version));
-      file.read(reinterpret_cast<char *>(&calibration.v_angle_offset), sizeof(calibration.v_angle_offset));
+      file.read(
+        reinterpret_cast<char *>(&calibration.v_angle_offset), sizeof(calibration.v_angle_offset));
       file.read(reinterpret_cast<char *>(&angle_size), sizeof(angle_size));
       file.read(reinterpret_cast<char *>(&geo_size), sizeof(geo_size));
       file.read(reinterpret_cast<char *>(&sn_size), sizeof(sn_size));
@@ -129,14 +181,47 @@ struct SeyondCalibrationData
     calibration.angle_hv_table.assign(
       std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 
+    const auto maybe_strip_packet_wrapper = [&calibration]() {
+      using detail::SeyondDataPacketHeader;
+      if (calibration.angle_hv_table.size() < sizeof(SeyondDataPacketHeader)) {
+        return;
+      }
+
+      const auto * packet =
+        reinterpret_cast<const SeyondDataPacketHeader *>(calibration.angle_hv_table.data());
+      const bool supported_anglehv_packet =
+        packet->common.magic_number == detail::kSeyondDataPacketMagic &&
+        (packet->type == detail::kRobinWAngleHvTableType ||
+         packet->type == detail::kRobinE1XAngleHvTableType ||
+         packet->type == detail::kHummingbirdAngleHvTableType ||
+         packet->type == detail::kRobinE2XAngleHvTableType);
+      if (!supported_anglehv_packet) {
+        return;
+      }
+
+      const size_t packet_size = packet->common.size;
+      if (
+        packet_size < sizeof(SeyondDataPacketHeader) ||
+        packet_size > calibration.angle_hv_table.size()) {
+        return;
+      }
+
+      calibration.angle_hv_table.erase(
+        calibration.angle_hv_table.begin(),
+        calibration.angle_hv_table.begin() +
+          static_cast<std::ptrdiff_t>(sizeof(SeyondDataPacketHeader)));
+      calibration.angle_hv_table.resize(packet_size - sizeof(SeyondDataPacketHeader));
+    };
+    maybe_strip_packet_wrapper();
+
     return calibration;
   }
 
   /// @brief Save calibration data to a binary file
   util::expected<std::monostate, Error> save_to_file(const std::string & calibration_file) const
   {
-    constexpr std::array<char, 12> k_magic{
-      'S', 'E', 'Y', 'O', 'N', 'D', '_', 'C', 'A', 'L', 'I', 'B'};
+    constexpr std::array<char, 12> k_magic{'S', 'E', 'Y', 'O', 'N', 'D',
+                                           '_', 'C', 'A', 'L', 'I', 'B'};
 
     std::ofstream file(calibration_file, std::ios::binary | std::ios::trunc);
     if (!file.is_open()) {
@@ -175,8 +260,7 @@ struct SeyondCalibrationData
 
     if (!file.good()) {
       return Error{
-        ErrorCode::OPEN_FOR_WRITE_FAILED,
-        "Failed to write calibration file: " + calibration_file};
+        ErrorCode::OPEN_FOR_WRITE_FAILED, "Failed to write calibration file: " + calibration_file};
     }
 
     return std::monostate{};

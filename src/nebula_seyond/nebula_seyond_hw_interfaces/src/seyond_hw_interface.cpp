@@ -143,7 +143,6 @@ Status SeyondHwInterface::download_binary_file(
     return Status::ERROR_1;
   }
 }
-
 Status SeyondHwInterface::sensor_interface_start()
 {
   std::lock_guard<std::mutex> lock(interface_mutex_);
@@ -182,7 +181,6 @@ Status SeyondHwInterface::sensor_interface_start()
       return Status::ERROR_1;
     }
   }
-
   udp_socket_->subscribe(std::move(scan_callback_));
   return Status::OK;
 }
@@ -359,7 +357,6 @@ Status SeyondHwInterface::set_return_mode(ReturnMode return_mode)
   }
   return set_attribute("return_mode", std::to_string(return_val));
 }
-
 util::expected<SeyondCalibrationData, SeyondCalibrationData::Error>
 SeyondHwInterface::get_calibration()
 {
@@ -383,7 +380,6 @@ SeyondHwInterface::get_calibration()
       calibration.angle_hv_table.assign(table_response.begin(), table_response.end());
     } catch (const std::exception &) {
     }
-
     if (
       sensor_config_.sensor_model == SeyondSensorModel::ROBIN_E1X ||
       sensor_config_.sensor_model == SeyondSensorModel::HUMMINGBIRD_D1) {
