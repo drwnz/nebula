@@ -93,6 +93,7 @@ private:
   std::optional<RobosenseDecoderWrapper> decoder_wrapper_;
 
   std::optional<nebula::drivers::RobosenseInfoDriver> info_driver_;
+  bool replay_calibration_applied_{false};
 
   std::mutex mtx_config_;
 
