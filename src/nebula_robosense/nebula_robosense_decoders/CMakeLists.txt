@@ -22,7 +22,10 @@ target_link_libraries(
          Boost::headers)
 
 # Robosense Info Decoder
-add_library(nebula_robosense_decoders_info SHARED src/robosense_info_driver.cpp)
+add_library(
+  nebula_robosense_decoders_info SHARED
+  src/robosense_info_driver.cpp
+  src/em4_pcap_calibration.cpp)
 
 target_include_directories(
   nebula_robosense_decoders_info
@@ -34,6 +37,7 @@ target_link_libraries(
   PUBLIC nebula_core_common::nebula_core_common
          nebula_robosense_common::nebula_robosense_common
          nebula_core_decoders::nebula_core_decoders rclcpp::rclcpp
+         ${PCAP_LIBRARY}
          Boost::headers)
 
 add_executable(em4_pcap_extract tools/em4_pcap_extract.cpp)

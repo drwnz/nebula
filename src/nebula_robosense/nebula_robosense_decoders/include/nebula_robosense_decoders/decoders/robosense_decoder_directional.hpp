@@ -163,8 +163,7 @@ protected:
 
         // Second return (only for sensors with radius_sd, e.g. EMX, in dual mode)
         if (is_dual_return) {
-          decode_second_return(
-            unit, chan, point_time_stamp_ns, static_cast<uint32_t>(blk));
+          decode_second_return(unit, chan, point_time_stamp_ns, static_cast<uint32_t>(blk));
         }
       }
     }
@@ -189,8 +188,7 @@ protected:
     point.time_stamp = time_stamp_ns;
     if constexpr (SensorT::has_custom_projection) {
       sensor_.populate_point_xyz(
-        point, packet_, block_id, static_cast<uint32_t>(chan),
-        *angle_corrector_);
+        point, packet_, block_id, static_cast<uint32_t>(chan), *angle_corrector_);
     } else {
       populate_point_xyz(point, unit, dist_sd);
     }

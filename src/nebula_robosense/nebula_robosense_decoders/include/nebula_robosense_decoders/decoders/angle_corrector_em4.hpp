@@ -41,20 +41,11 @@ public:
       throw std::runtime_error("Cannot instantiate AngleCorrectorEM4 without calibration data");
     }
 
-    half_vcsel_yaw_offset_rad_.reserve(sensor_calibration->half_vcsel_yaw_offset.size());
-    for (auto offset : sensor_calibration->half_vcsel_yaw_offset) {
-      half_vcsel_yaw_offset_rad_.push_back(deg2rad(offset * 0.01f));
-    }
-
-    pixel_pitch_rad_.reserve(sensor_calibration->pixel_pitch.size());
-    for (auto pitch : sensor_calibration->pixel_pitch) {
-      pixel_pitch_rad_.push_back(deg2rad(pitch * 0.01f));
-    }
-
-    surface_pitch_offset_rad_.reserve(sensor_calibration->surface_pitch_offset.size());
-    for (auto offset : sensor_calibration->surface_pitch_offset) {
-      surface_pitch_offset_rad_.push_back(deg2rad(offset * 0.01f));
-    }
+    half_vcsel_yaw_offset_rad_ =
+      convert_angle_offsets_to_rad(sensor_calibration->half_vcsel_yaw_offset, 0.01f);
+    pixel_pitch_rad_ = convert_angle_offsets_to_rad(sensor_calibration->pixel_pitch, 0.01f);
+    surface_pitch_offset_rad_ =
+      convert_angle_offsets_to_rad(sensor_calibration->surface_pitch_offset, 0.01f);
   }
 
   /// @brief EM4-specific angle correction math (Method 4)
@@ -77,15 +68,10 @@ public:
       (channel_id < pixel_pitch_rad_.size() ? pixel_pitch_rad_[channel_id] : 0.f) +
       (mirror_id < surface_pitch_offset_rad_.size() ? surface_pitch_offset_rad_[mirror_id] : 0.f);
 
-    return {
-      yaw_rad,
-      pitch_rad,
-      sinf(yaw_rad),
-      cosf(yaw_rad),
-      sinf(pitch_rad),
-      cosf(pitch_rad),
-      static_cast<uint16_t>(channel_id)  // TODO(drwnz): Verify if channel indexing needs remapping
-    };
+    return make_corrected_angle_data(
+      yaw_rad, pitch_rad,
+      static_cast<uint16_t>(
+        channel_id));  // TODO(drwnz): Verify if channel indexing needs remapping
   }
 
   // Not used for EM4 in the standard way, as EM4 doesn't have a fixed azimuth grid

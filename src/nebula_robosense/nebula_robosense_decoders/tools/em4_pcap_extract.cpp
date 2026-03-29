@@ -14,13 +14,13 @@
 
 #include "nebula_core_common/point_types.hpp"
 #include "nebula_robosense_common/robosense_common.hpp"
+#include "nebula_robosense_decoders/offline/em4_pcap_calibration.hpp"
 #include "nebula_robosense_decoders/robosense_driver.hpp"
-#include "nebula_robosense_decoders/robosense_info_driver.hpp"
 
-#include <pcap/pcap.h>
 #include <rclcpp/rclcpp.hpp>
 
 #include <arpa/inet.h>
+#include <pcap/pcap.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -123,8 +123,7 @@ std::optional<UdpPacketView> parse_udp_packet(const pcap_pkthdr & header, const 
   }
 
   const auto * ethernet = packet;
-  const uint16_t ether_type =
-    static_cast<uint16_t>((ethernet[12] << 8U) | ethernet[13]);
+  const uint16_t ether_type = static_cast<uint16_t>((ethernet[12] << 8U) | ethernet[13]);
   if (ether_type != kEtherTypeIpv4) {
     return std::nullopt;
   }
@@ -144,8 +143,7 @@ std::optional<UdpPacketView> parse_udp_packet(const pcap_pkthdr & header, const 
   }
 
   const auto * udp = ipv4 + ip_header_size;
-  const uint16_t udp_length =
-    static_cast<uint16_t>((udp[4] << 8U) | udp[5]);
+  const uint16_t udp_length = static_cast<uint16_t>((udp[4] << 8U) | udp[5]);
   if (udp_length < kMinUdpHeaderSize) {
     return std::nullopt;
   }
@@ -156,10 +154,8 @@ std::optional<UdpPacketView> parse_udp_packet(const pcap_pkthdr & header, const 
   }
 
   return UdpPacketView{
-    static_cast<uint16_t>((udp[0] << 8U) | udp[1]),
-    static_cast<uint16_t>((udp[2] << 8U) | udp[3]),
-    udp + kMinUdpHeaderSize,
-    static_cast<std::size_t>(udp_length - kMinUdpHeaderSize)};
+    static_cast<uint16_t>((udp[0] << 8U) | udp[1]), static_cast<uint16_t>((udp[2] << 8U) | udp[3]),
+    udp + kMinUdpHeaderSize, static_cast<std::size_t>(udp_length - kMinUdpHeaderSize)};
 }
 
 void write_pcd_ascii(
@@ -189,65 +185,6 @@ void write_pcd_ascii(
   }
 }
 
-std::shared_ptr<const nebula::drivers::RobosenseCalibrationConfiguration> load_em4_calibration(
-  const CliOptions & options)
-{
-  auto sensor_config = std::make_shared<nebula::drivers::RobosenseSensorConfiguration>();
-  sensor_config->sensor_model = nebula::drivers::SensorModel::ROBOSENSE_EM4;
-  sensor_config->return_mode = nebula::drivers::ReturnMode::SINGLE_STRONGEST;
-
-  nebula::drivers::RobosenseInfoDriver info_driver(sensor_config);
-
-  char errbuf[PCAP_ERRBUF_SIZE] = {};
-  pcap_t * handle = pcap_open_offline(options.pcap_path.c_str(), errbuf);
-  if (handle == nullptr) {
-    throw std::runtime_error("Failed to open pcap: " + std::string(errbuf));
-  }
-
-  const int linktype = pcap_datalink(handle);
-  if (linktype != DLT_EN10MB) {
-    pcap_close(handle);
-    throw std::runtime_error("Unsupported link type in pcap");
-  }
-
-  bool got_difop1 = false;
-  bool got_difop2 = false;
-
-  pcap_pkthdr * header = nullptr;
-  const uint8_t * packet = nullptr;
-  while (pcap_next_ex(handle, &header, &packet) >= 0) {
-    const auto udp = parse_udp_packet(*header, packet);
-    if (!udp.has_value()) {
-      continue;
-    }
-    if (udp->payload_size != 1248 && udp->payload_size != 1162) {
-      continue;
-    }
-
-    std::vector<uint8_t> payload(udp->payload, udp->payload + udp->payload_size);
-    if (info_driver.decode_info_packet(payload) != nebula::Status::OK) {
-      continue;
-    }
-
-    got_difop1 = got_difop1 || udp->payload_size == 1248;
-    got_difop2 = got_difop2 || udp->payload_size == 1162;
-    if (got_difop2) {
-      break;
-    }
-  }
-
-  pcap_close(handle);
-
-  if (!got_difop2) {
-    throw std::runtime_error("Did not find an EM4 DIFOP2 calibration packet in pcap");
-  }
-
-  auto calibration = info_driver.get_sensor_calibration();
-  calibration.create_corrected_channels();
-  return std::make_shared<const nebula::drivers::RobosenseCalibrationConfiguration>(
-    std::move(calibration));
-}
-
 std::size_t extract_em4_frames(const CliOptions & options)
 {
   auto sensor_config = std::make_shared<nebula::drivers::RobosenseSensorConfiguration>();
@@ -257,7 +194,8 @@ std::size_t extract_em4_frames(const CliOptions & options)
   sensor_config->data_port = options.msop_port;
   sensor_config->gnss_port = options.difop_port;
 
-  auto calibration = load_em4_calibration(options);
+  auto calibration =
+    nebula::drivers::load_em4_calibration_from_pcap(options.pcap_path.string(), *sensor_config);
   nebula::drivers::RobosenseDriver driver(sensor_config, calibration);
 
   char errbuf[PCAP_ERRBUF_SIZE] = {};
@@ -296,8 +234,8 @@ std::size_t extract_em4_frames(const CliOptions & options)
     }
 
     std::ostringstream stem;
-    stem << "nebula_frame_" << std::setw(4) << std::setfill('0') << saved_frames
-         << "_ts_" << std::fixed << std::setprecision(6) << timestamp_s;
+    stem << "nebula_frame_" << std::setw(4) << std::setfill('0') << saved_frames << "_ts_"
+         << std::fixed << std::setprecision(6) << timestamp_s;
 
     write_pcd_ascii(options.output_dir / (stem.str() + ".pcd"), *cloud);
     ++saved_frames;
