@@ -4,6 +4,7 @@ project(nebula_robosense_decoders)
 find_package(autoware_cmake REQUIRED)
 find_package(Boost REQUIRED)
 autoware_package()
+find_library(PCAP_LIBRARY pcap REQUIRED)
 
 # Robosense Decoder
 add_library(nebula_robosense_decoders SHARED src/robosense_driver.cpp)
@@ -35,10 +36,23 @@ target_link_libraries(
          nebula_core_decoders::nebula_core_decoders rclcpp::rclcpp
          Boost::headers)
 
+add_executable(em4_pcap_extract tools/em4_pcap_extract.cpp)
+target_link_libraries(
+  em4_pcap_extract
+  PRIVATE nebula_robosense_decoders
+          nebula_robosense_decoders_info
+          nebula_core_common::nebula_core_common
+          nebula_robosense_common::nebula_robosense_common
+          nebula_core_decoders::nebula_core_decoders
+          rclcpp::rclcpp
+          ${PCAP_LIBRARY}
+          Boost::headers)
+
 install(TARGETS nebula_robosense_decoders
         EXPORT export_nebula_robosense_decoders)
 install(TARGETS nebula_robosense_decoders_info
         EXPORT export_nebula_robosense_decoders_info)
+install(TARGETS em4_pcap_extract DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
 
