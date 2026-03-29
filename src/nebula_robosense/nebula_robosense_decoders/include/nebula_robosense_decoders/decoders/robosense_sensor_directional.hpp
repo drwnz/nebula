@@ -15,6 +15,7 @@
 #pragma once
 
 #include "nebula_core_common/nebula_common.hpp"
+#include "nebula_robosense_decoders/decoders/angle_corrector.hpp"
 #include "nebula_robosense_decoders/decoders/robosense_sensor.hpp"
 
 #include <cstdint>
@@ -93,6 +94,34 @@ public:
       default:
         sensor_info["sync_status"] = "n/a";
     }
+  }
+
+  static ReturnMode return_mode_from_wave_mode(uint8_t wave_mode)
+  {
+    switch (wave_mode) {
+      case DirectionalReturnModeFlags::dual:
+        return ReturnMode::DUAL;
+      case DirectionalReturnModeFlags::strongest:
+        return ReturnMode::SINGLE_STRONGEST;
+      case DirectionalReturnModeFlags::last:
+        return ReturnMode::SINGLE_LAST;
+      case DirectionalReturnModeFlags::nearest:
+        return ReturnMode::SINGLE_FIRST;
+      default:
+        return ReturnMode::UNKNOWN;
+    }
+  }
+
+  static void populate_point_from_corrected_angle(
+    NebulaPoint & point, const CorrectedAngleData & corrected_data, uint16_t channel)
+  {
+    const float xy_dist = point.distance * corrected_data.cos_elevation;
+    point.x = xy_dist * corrected_data.cos_azimuth;
+    point.y = xy_dist * corrected_data.sin_azimuth;
+    point.z = point.distance * corrected_data.sin_elevation;
+    point.azimuth = corrected_data.azimuth_rad;
+    point.elevation = corrected_data.elevation_rad;
+    point.channel = channel;
   }
 };
 

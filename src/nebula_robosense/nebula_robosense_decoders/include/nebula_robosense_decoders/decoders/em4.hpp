@@ -35,21 +35,21 @@ namespace robosense_packet::em4
 
 struct Header
 {
-  big_uint32_buf_t header_id;    // 0
-  big_uint16_buf_t pkt_seq;      // 4
-  uint8_t reserved1[2];          // 6
-  big_uint8_buf_t return_mode;   // 8
-  big_uint8_buf_t time_mode;     // 9
-  Timestamp timestamp;           // 10
-  big_uint8_buf_t frame_sync;    // 20
-  big_uint8_buf_t frame_rate;    // 21
-  big_uint16_buf_t column_num;   // 22
-  big_int16_buf_t yaw_angle;     // 24
-  big_uint8_buf_t pack_mode;     // 26
-  big_uint8_buf_t surface_id;    // 27
-  big_uint16_buf_t reserved2;    // 28
-  big_uint8_buf_t lidar_type;    // 30
-  big_uint8_buf_t temperature;   // 31
+  big_uint32_buf_t header_id;   // 0
+  big_uint16_buf_t pkt_seq;     // 4
+  uint8_t reserved1[2];         // 6
+  big_uint8_buf_t return_mode;  // 8
+  big_uint8_buf_t time_mode;    // 9
+  Timestamp timestamp;          // 10
+  big_uint8_buf_t frame_sync;   // 20
+  big_uint8_buf_t frame_rate;   // 21
+  big_uint16_buf_t column_num;  // 22
+  big_int16_buf_t yaw_angle;    // 24
+  big_uint8_buf_t pack_mode;    // 26
+  big_uint8_buf_t surface_id;   // 27
+  big_uint16_buf_t reserved2;   // 28
+  big_uint8_buf_t lidar_type;   // 30
+  big_uint8_buf_t temperature;  // 31
 };
 
 struct Unit
@@ -200,12 +200,6 @@ private:
   static constexpr uint8_t sync_mode_internal_flag = 0x00;
   static constexpr uint8_t sync_mode_gptp_flag = 0x03;
 
-  // EM4 DIFOP wave mode byte values
-  static constexpr uint8_t wave_mode_nearest_farthest = 0x00;
-  static constexpr uint8_t wave_mode_strongest = 0x04;
-  static constexpr uint8_t wave_mode_farthest = 0x05;
-  static constexpr uint8_t wave_mode_nearest = 0x06;
-
 public:
   static constexpr bool has_custom_projection = true;
   typedef AngleCorrectorEM4 angle_corrector_t;
@@ -216,18 +210,7 @@ public:
   ReturnMode get_return_mode(const robosense_packet::em4::CombinedInfo & info) override
   {
     if (!info.packet1_received) return ReturnMode::UNKNOWN;
-    switch (info.packet1.wave_mode.value()) {
-      case wave_mode_nearest_farthest:
-        return ReturnMode::DUAL;
-      case wave_mode_strongest:
-        return ReturnMode::SINGLE_STRONGEST;
-      case wave_mode_farthest:
-        return ReturnMode::SINGLE_LAST;
-      case wave_mode_nearest:
-        return ReturnMode::SINGLE_FIRST;
-      default:
-        return ReturnMode::UNKNOWN;
-    }
+    return return_mode_from_wave_mode(info.packet1.wave_mode.value());
   }
 
   RobosenseCalibrationConfiguration get_sensor_calibration(
@@ -320,15 +303,7 @@ public:
 
     auto corrected_data =
       angle_corrector.get_corrected_angle_data_em4(raw_yaw, real_chan, surface_id);
-
-    float xy_dist = point.distance * corrected_data.cos_elevation;
-    point.x = xy_dist * corrected_data.cos_azimuth;
-    point.y = xy_dist * corrected_data.sin_azimuth;
-    point.z = point.distance * corrected_data.sin_elevation;
-
-    point.azimuth = corrected_data.azimuth_rad;
-    point.elevation = corrected_data.elevation_rad;
-    point.channel = static_cast<uint16_t>(real_chan);
+    populate_point_from_corrected_angle(point, corrected_data, static_cast<uint16_t>(real_chan));
   }
 };
 

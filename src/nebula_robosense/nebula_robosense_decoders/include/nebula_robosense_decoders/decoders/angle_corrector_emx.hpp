@@ -41,10 +41,8 @@ public:
       throw std::runtime_error("Cannot instantiate AngleCorrectorEMX without calibration data");
     }
 
-    half_vcsel_yaw_offset_rad_.reserve(sensor_calibration->half_vcsel_yaw_offset.size());
-    for (auto offset : sensor_calibration->half_vcsel_yaw_offset) {
-      half_vcsel_yaw_offset_rad_.push_back(deg2rad(static_cast<float>(offset) / 512.0f));
-    }
+    half_vcsel_yaw_offset_rad_ =
+      convert_angle_offsets_to_rad(sensor_calibration->half_vcsel_yaw_offset, 1.0f / 512.0f);
 
     pixel_pitch_rad_.reserve(192);
     bool use_default_pitch = true;
@@ -70,10 +68,8 @@ public:
       }
     }
 
-    surface_pitch_offset_rad_.reserve(sensor_calibration->surface_pitch_offset.size());
-    for (auto offset : sensor_calibration->surface_pitch_offset) {
-      surface_pitch_offset_rad_.push_back(deg2rad(static_cast<float>(offset) / 200.0f));
-    }
+    surface_pitch_offset_rad_ =
+      convert_angle_offsets_to_rad(sensor_calibration->surface_pitch_offset, 1.0f / 200.0f);
   }
 
   /// @brief EMX-specific angle correction math
@@ -94,14 +90,7 @@ public:
       (channel_id < pixel_pitch_rad_.size() ? pixel_pitch_rad_[channel_id] : 0.f) +
       (mirror_id < surface_pitch_offset_rad_.size() ? surface_pitch_offset_rad_[mirror_id] : 0.f);
 
-    return {
-      yaw_rad,
-      pitch_rad,
-      sinf(yaw_rad),
-      cosf(yaw_rad),
-      sinf(pitch_rad),
-      cosf(pitch_rad),
-      static_cast<uint16_t>(channel_id)};
+    return make_corrected_angle_data(yaw_rad, pitch_rad, static_cast<uint16_t>(channel_id));
   }
 
   CorrectedAngleData get_corrected_angle_data(uint32_t, uint32_t) override { return {}; }
