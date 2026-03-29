@@ -238,8 +238,7 @@ void RobosenseRosWrapper::receive_info_packet_callback(std::vector<uint8_t> & pa
     decoder_wrapper_.emplace(this, nullptr, sensor_cfg_ptr_, calib_ptr);
     replay_calibration_applied_ = true;
     RCLCPP_INFO_STREAM(
-      get_logger(), "Applied replay calibration from info packets: "
-                      << decoder_wrapper_->status());
+      get_logger(), "Applied replay calibration from info packets: " << decoder_wrapper_->status());
   }
 
   if (!decoder_wrapper_) {

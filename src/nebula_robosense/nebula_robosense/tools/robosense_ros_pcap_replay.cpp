@@ -14,17 +14,20 @@
 
 #include "nebula_robosense/robosense_ros_wrapper.hpp"
 
+#include <rclcpp/rclcpp.hpp>
+
 #include <nebula_msgs/msg/nebula_packet.hpp>
 #include <nebula_msgs/msg/nebula_packets.hpp>
 #include <robosense_msgs/msg/robosense_info_packet.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
 #include <pcap/pcap.h>
-#include <rclcpp/rclcpp.hpp>
 
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <iostream>
+#include <memory>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -177,10 +180,8 @@ std::optional<UdpPacketView> parse_udp_packet(const pcap_pkthdr & header, const 
   }
 
   return UdpPacketView{
-    static_cast<uint16_t>((udp[0] << 8U) | udp[1]),
-    static_cast<uint16_t>((udp[2] << 8U) | udp[3]),
-    udp + kMinUdpHeaderSize,
-    static_cast<std::size_t>(udp_length - kMinUdpHeaderSize)};
+    static_cast<uint16_t>((udp[0] << 8U) | udp[1]), static_cast<uint16_t>((udp[2] << 8U) | udp[3]),
+    udp + kMinUdpHeaderSize, static_cast<std::size_t>(udp_length - kMinUdpHeaderSize)};
 }
 
 FieldOffsets get_field_offsets(const sensor_msgs::msg::PointCloud2 & msg)
@@ -223,7 +224,8 @@ float read_intensity(
   }
 }
 
-void write_pcd_ascii(const std::filesystem::path & output_path, const sensor_msgs::msg::PointCloud2 & msg)
+void write_pcd_ascii(
+  const std::filesystem::path & output_path, const sensor_msgs::msg::PointCloud2 & msg)
 {
   const auto offsets = get_field_offsets(msg);
   std::ofstream os(output_path);
@@ -262,10 +264,9 @@ public:
   : Node("robosense_ros_pcap_replay", rclcpp::NodeOptions().use_intra_process_comms(true)),
     options_(options)
   {
-    packets_pub_ =
-      create_publisher<nebula_msgs::msg::NebulaPackets>(options_.packets_topic, rclcpp::SensorDataQoS());
-    info_pub_ =
-      create_publisher<robosense_msgs::msg::RobosenseInfoPacket>(options_.info_topic, 10);
+    packets_pub_ = create_publisher<nebula_msgs::msg::NebulaPackets>(
+      options_.packets_topic, rclcpp::SensorDataQoS());
+    info_pub_ = create_publisher<robosense_msgs::msg::RobosenseInfoPacket>(options_.info_topic, 10);
     cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
       options_.cloud_topic, rclcpp::SensorDataQoS(),
       [this](const sensor_msgs::msg::PointCloud2::SharedPtr msg) { on_cloud(*msg); });
@@ -277,8 +278,8 @@ public:
   {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (std::chrono::steady_clock::now() < deadline) {
-      const auto packets_subscriptions =
-        packets_pub_->get_subscription_count() + packets_pub_->get_intra_process_subscription_count();
+      const auto packets_subscriptions = packets_pub_->get_subscription_count() +
+                                         packets_pub_->get_intra_process_subscription_count();
       const auto info_subscriptions =
         info_pub_->get_subscription_count() + info_pub_->get_intra_process_subscription_count();
       if (packets_subscriptions > 0 && info_subscriptions > 0) {
@@ -340,7 +341,8 @@ public:
 
     const auto settle_deadline =
       std::chrono::steady_clock::now() + std::chrono::milliseconds(options_.settle_ms);
-    while (cloud_count_ < options_.max_clouds && std::chrono::steady_clock::now() < settle_deadline) {
+    while (cloud_count_ < options_.max_clouds &&
+           std::chrono::steady_clock::now() < settle_deadline) {
       executor.spin_some();
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -375,24 +377,23 @@ std::shared_ptr<nebula::ros::RobosenseRosWrapper> make_wrapper(const CliOptions 
   const auto info_port = *options.info_ports.begin();
   rclcpp::NodeOptions node_options;
   node_options.use_intra_process_comms(true);
-  node_options.arguments(
-    {
-      "--ros-args",
-      "--params-file",
-      options.wrapper_params_file.string(),
-      "-p",
-      "launch_hw:=false",
-      "-p",
-      "data_port:=" + std::to_string(options.msop_port),
-      "-p",
-      "gnss_port:=" + std::to_string(info_port),
-      "-r",
-      "/robosense_packets:=" + options.packets_topic,
-      "-r",
-      "/robosense_info_packets:=" + options.info_topic,
-      "-r",
-      "robosense_points:=" + options.cloud_topic,
-    });
+  node_options.arguments({
+    "--ros-args",
+    "--params-file",
+    options.wrapper_params_file.string(),
+    "-p",
+    "launch_hw:=false",
+    "-p",
+    "data_port:=" + std::to_string(options.msop_port),
+    "-p",
+    "gnss_port:=" + std::to_string(info_port),
+    "-r",
+    "/robosense_packets:=" + options.packets_topic,
+    "-r",
+    "/robosense_info_packets:=" + options.info_topic,
+    "-r",
+    "robosense_points:=" + options.cloud_topic,
+  });
   return std::make_shared<nebula::ros::RobosenseRosWrapper>(node_options);
 }
 
