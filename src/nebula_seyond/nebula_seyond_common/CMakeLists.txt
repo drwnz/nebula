@@ -20,6 +20,6 @@ install(TARGETS nebula_seyond_common
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
 ament_export_targets(export_nebula_seyond_common)
-ament_export_dependencies(nebula_core_common nebula_core_decoders nlohmann_json)
+ament_export_dependencies(nebula_core_common nebula_core_decoders)
 
 ament_package()
