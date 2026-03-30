@@ -22,6 +22,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace nebula::ros
@@ -37,6 +38,10 @@ SeyondRosWrapper::SeyondRosWrapper(const rclcpp::NodeOptions & options)
 
   cloud_pub_ =
     create_publisher<sensor_msgs::msg::PointCloud2>("seyond_points", rclcpp::SensorDataQoS());
+  packets_pub_ =
+    create_publisher<nebula_msgs::msg::NebulaPackets>("seyond_packets", rclcpp::SensorDataQoS());
+  current_scan_msg_ = std::make_unique<nebula_msgs::msg::NebulaPackets>();
+  current_scan_msg_->header.frame_id = config_.frame_id;
 
   nebula::drivers::SeyondCalibrationData calibration{};
 
@@ -58,12 +63,31 @@ SeyondRosWrapper::SeyondRosWrapper(const rclcpp::NodeOptions & options)
   } else {
     RCLCPP_INFO(
       get_logger(), "Hardware connection disabled (launch_hw:=false). Decoder only mode active.");
+
+    if (!calibration_file_.empty()) {
+      auto calibration_or_error =
+        nebula::drivers::SeyondCalibrationData::load_from_file(calibration_file_);
+      if (!calibration_or_error.has_value()) {
+        throw std::runtime_error(calibration_or_error.error().message);
+      }
+      calibration = calibration_or_error.value();
+      RCLCPP_INFO_STREAM(
+        get_logger(), "Loaded Seyond calibration for replay from "
+                        << calibration_file_ << " (" << calibration.angle_hv_table.size()
+                        << " bytes)");
+    }
   }
 
   decoder_ = std::make_unique<nebula::drivers::SeyondDecoder>(
     config_,
     std::bind(&SeyondRosWrapper::publish_cloud, this, std::placeholders::_1, std::placeholders::_2),
     calibration);
+
+  if (!launch_hw_) {
+    packets_sub_ = create_subscription<nebula_msgs::msg::NebulaPackets>(
+      "seyond_packets", rclcpp::SensorDataQoS(),
+      std::bind(&SeyondRosWrapper::receive_scan_message_callback, this, std::placeholders::_1));
+  }
 
   if (launch_hw_ && hw_interface_) {
     auto status = hw_interface_->sensor_interface_start();
@@ -81,13 +105,62 @@ void SeyondRosWrapper::receive_packet_callback(
   std::vector<uint8_t> & packet,
   const nebula::drivers::connections::UdpSocket::RxMetadata & metadata)
 {
-  (void)metadata;
+  builtin_interfaces::msg::Time stamp{};
+  if (metadata.timestamp_ns.has_value()) {
+    rclcpp::Time received_time(*metadata.timestamp_ns);
+    stamp = received_time;
+  } else {
+    stamp = now();
+  }
+
+  process_packet(packet, stamp, true);
+}
+
+void SeyondRosWrapper::receive_scan_message_callback(
+  nebula_msgs::msg::NebulaPackets::UniquePtr scan_msg)
+{
+  if (launch_hw_) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "Ignoring received NebulaPackets. Launch with launch_hw:=false to enable replay mode.");
+    return;
+  }
+
+  for (const auto & packet_msg : scan_msg->packets) {
+    process_packet(packet_msg.data, packet_msg.stamp, false);
+  }
+}
+
+void SeyondRosWrapper::process_packet(
+  const std::vector<uint8_t> & packet, const builtin_interfaces::msg::Time & stamp,
+  bool collect_for_publish)
+{
+  if (
+    collect_for_publish && packets_pub_ &&
+    (packets_pub_->get_subscription_count() > 0 ||
+     packets_pub_->get_intra_process_subscription_count() > 0)) {
+    if (current_scan_msg_->packets.empty()) {
+      current_scan_msg_->header.stamp = stamp;
+    }
+
+    nebula_msgs::msg::NebulaPacket packet_msg;
+    packet_msg.stamp = stamp;
+    packet_msg.data = packet;
+    current_scan_msg_->packets.emplace_back(std::move(packet_msg));
+  }
+
   decoder_->unpack(packet);
 }
 
 void SeyondRosWrapper::publish_cloud(
   nebula::drivers::NebulaPointCloudPtr cloud, uint64_t base_timestamp_ns)
 {
+  if (current_scan_msg_ && !current_scan_msg_->packets.empty()) {
+    packets_pub_->publish(std::move(current_scan_msg_));
+    current_scan_msg_ = std::make_unique<nebula_msgs::msg::NebulaPackets>();
+    current_scan_msg_->header.frame_id = config_.frame_id;
+  }
+
   auto ros_msg = nebula::ros::to_ros_msg(cloud);
 
   ros_msg.header.frame_id = config_.frame_id;
@@ -116,6 +189,7 @@ void SeyondRosWrapper::declare_parameters()
   declare_parameter<int>("udp_status_port", 8010);
   declare_parameter<bool>("use_sensor_time", false);
   declare_parameter<std::string>("frame_id", "seyond");
+  declare_parameter<std::string>("calibration_file", "");
   declare_parameter<bool>("setup_sensor", true);
   declare_parameter<std::string>("return_mode", "Single");
   declare_parameter<std::string>("reflectance_mode", "Reflectivity");
@@ -146,6 +220,7 @@ void SeyondRosWrapper::get_parameters()
     static_cast<uint16_t>(get_parameter("udp_status_port").as_int());
   config_.use_sensor_time = get_parameter("use_sensor_time").as_bool();
   config_.frame_id = get_parameter("frame_id").as_string();
+  calibration_file_ = get_parameter("calibration_file").as_string();
   config_.setup_sensor = get_parameter("setup_sensor").as_bool();
   config_.return_mode =
     nebula::drivers::return_mode_from_string_seyond(get_parameter("return_mode").as_string());
