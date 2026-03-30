@@ -35,21 +35,21 @@ namespace robosense_packet::em4
 
 struct Header
 {
-  big_uint32_buf_t header_id;         // 0
-  big_uint16_buf_t pkt_seq;           // 4
-  uint8_t reserved1[2];               // 6
-  big_uint8_buf_t return_mode;        // 8
-  big_uint8_buf_t time_mode;          // 9
-  Timestamp timestamp;                // 10
-  big_uint8_buf_t mirror_id;          // 20
-  big_uint8_buf_t frame_rate;         // 21
-  big_uint16_buf_t column_num;        // 22
-  big_int16_buf_t yaw_angle;          // 24
-  uint8_t reserved2[1];               // 26
-  big_uint16_buf_t protocol_version;  // 27
-  uint8_t reserved3[1];               // 29
-  big_uint8_buf_t lidar_type;         // 30
-  big_uint8_buf_t temperature;        // 31
+  big_uint32_buf_t header_id;   // 0
+  big_uint16_buf_t pkt_seq;     // 4
+  uint8_t reserved1[2];         // 6
+  big_uint8_buf_t return_mode;  // 8
+  big_uint8_buf_t time_mode;    // 9
+  Timestamp timestamp;          // 10
+  big_uint8_buf_t frame_sync;   // 20
+  big_uint8_buf_t frame_rate;   // 21
+  big_uint16_buf_t column_num;  // 22
+  big_int16_buf_t yaw_angle;    // 24
+  big_uint8_buf_t pack_mode;    // 26
+  big_uint8_buf_t surface_id;   // 27
+  big_uint16_buf_t reserved2;   // 28
+  big_uint8_buf_t lidar_type;   // 30
+  big_uint8_buf_t temperature;  // 31
 };
 
 struct Unit
@@ -73,16 +73,15 @@ struct Body
 
 struct Footer
 {
-  uint8_t reserved[4];
-  big_uint32_buf_t vcsel_interval_field;  // 1076
-  big_uint32_buf_t tail;                  // 1080
+  big_uint16_buf_t data_length;  // 1072
+  big_uint16_buf_t counter;      // 1074
+  big_uint32_buf_t data_id;      // 1076
+  big_uint32_buf_t crc32;        // 1080
 };
 
 struct Packet : public robosense_packet::PacketBase<260, 1, 2, 520>
 {
-  typedef robosense_packet::Body<
-    robosense_packet::Block<Unit, Packet::n_channels>, Packet::n_blocks>
-    body_t;
+  typedef Body body_t;
   Header header;
   body_t body;
   Footer footer;
@@ -201,12 +200,6 @@ private:
   static constexpr uint8_t sync_mode_internal_flag = 0x00;
   static constexpr uint8_t sync_mode_gptp_flag = 0x03;
 
-  // EM4 DIFOP wave mode byte values
-  static constexpr uint8_t wave_mode_nearest_farthest = 0x00;
-  static constexpr uint8_t wave_mode_strongest = 0x04;
-  static constexpr uint8_t wave_mode_farthest = 0x05;
-  static constexpr uint8_t wave_mode_nearest = 0x06;
-
 public:
   static constexpr bool has_custom_projection = true;
   typedef AngleCorrectorEM4 angle_corrector_t;
@@ -217,18 +210,7 @@ public:
   ReturnMode get_return_mode(const robosense_packet::em4::CombinedInfo & info) override
   {
     if (!info.packet1_received) return ReturnMode::UNKNOWN;
-    switch (info.packet1.wave_mode.value()) {
-      case wave_mode_nearest_farthest:
-        return ReturnMode::DUAL;
-      case wave_mode_strongest:
-        return ReturnMode::SINGLE_STRONGEST;
-      case wave_mode_farthest:
-        return ReturnMode::SINGLE_LAST;
-      case wave_mode_nearest:
-        return ReturnMode::SINGLE_FIRST;
-      default:
-        return ReturnMode::UNKNOWN;
-    }
+    return return_mode_from_wave_mode(info.packet1.wave_mode.value());
   }
 
   RobosenseCalibrationConfiguration get_sensor_calibration(
@@ -289,17 +271,9 @@ public:
     const uint32_t channel_id,
     const std::shared_ptr<const RobosenseSensorConfiguration> & /*sensor_configuration*/) override
   {
-    // Even zone time = timestamp (offset 0)
-    // Odd zone time = timestamp - (256us + vcsel_interval)
-    // Even channels: 0, 2, 4, ...
-    // Odd channels: 1, 3, 5, ...
-    if (channel_id % 2 == 0) {
-      return 0;
-    }
-
-    // vcsel_interval is a 1-byte signed value in the last byte of the 4-byte field
-    int8_t vcsel_interval = static_cast<int8_t>(packet.footer.vcsel_interval_field.value() & 0xFF);
-    return -(256000 + static_cast<int>(vcsel_interval) * 1000);
+    (void)packet;
+    (void)channel_id;
+    return 0;
   }
 
   template <typename CorrectorT>
@@ -307,8 +281,12 @@ public:
     ::nebula::drivers::NebulaPoint & point, const robosense_packet::em4::Packet & pkt,
     uint32_t block_id, uint32_t /*channel_id*/, CorrectorT & angle_corrector)
   {
-    uint8_t mirror_id = pkt.header.mirror_id.value() - 1;
-    if (mirror_id > 3) mirror_id = 0;
+    // The validated vendor output for the currently supported EM4 packet format is equivalent to
+    // using surface index 0.
+    // Do not use byte 27 surface_id here: it regresses the projection against the vendor PCDs.
+    // Do not infer that byte 20 is the true surface selector either; the current evidence only
+    // supports effective surface-0 behavior for this EM4 format/firmware.
+    constexpr uint8_t surface_id = 0;
 
     int16_t raw_yaw = pkt.header.yaw_angle.value();
 
@@ -324,16 +302,8 @@ public:
     }
 
     auto corrected_data =
-      angle_corrector.get_corrected_angle_data_em4(raw_yaw, real_chan, mirror_id);
-
-    float xy_dist = point.distance * corrected_data.cos_elevation;
-    point.x = xy_dist * corrected_data.cos_azimuth;
-    point.y = -xy_dist * corrected_data.sin_azimuth;
-    point.z = point.distance * corrected_data.sin_elevation;
-
-    point.azimuth = corrected_data.azimuth_rad;
-    point.elevation = corrected_data.elevation_rad;
-    point.channel = static_cast<uint16_t>(real_chan);
+      angle_corrector.get_corrected_angle_data_em4(raw_yaw, real_chan, surface_id);
+    populate_point_from_corrected_angle(point, corrected_data, static_cast<uint16_t>(real_chan));
   }
 };
 

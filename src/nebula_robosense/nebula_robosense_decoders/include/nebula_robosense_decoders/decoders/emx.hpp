@@ -16,10 +16,9 @@
 
 #include "nebula_core_common/nebula_common.hpp"
 #include "nebula_robosense_common/robosense_common.hpp"
-#include "nebula_robosense_decoders/decoders/angle_corrector.hpp"
 #include "nebula_robosense_decoders/decoders/angle_corrector_emx.hpp"
 #include "nebula_robosense_decoders/decoders/robosense_packet.hpp"
-#include "nebula_robosense_decoders/decoders/robosense_sensor.hpp"
+#include "nebula_robosense_decoders/decoders/robosense_sensor_directional.hpp"
 
 #include <boost/endian/buffers.hpp>
 
@@ -211,14 +210,6 @@ private:
   static constexpr uint8_t sync_mode_gptp_flag = 0x03;
   static constexpr uint8_t sync_mode_p2p_flag = 0x04;
 
-  // EMX DIFOP wave mode byte values
-  static constexpr uint8_t wave_mode_nearest_farthest = 0x00;
-  static constexpr uint8_t wave_mode_strongest = 0x04;
-  static constexpr uint8_t wave_mode_farthest = 0x05;
-  static constexpr uint8_t wave_mode_nearest = 0x06;
-
-  static constexpr int VECTOR_BASE = 32768;
-
 public:
   static constexpr bool has_custom_projection = true;
   typedef AngleCorrectorEMX angle_corrector_t;
@@ -229,18 +220,7 @@ public:
   ReturnMode get_return_mode(const robosense_packet::emx::CombinedInfo & info_packet) override
   {
     if (info_packet.packet1_received) {
-      switch (info_packet.packet1.wave_mode.value()) {
-        case wave_mode_nearest_farthest:
-          return ReturnMode::DUAL;
-        case wave_mode_strongest:
-          return ReturnMode::SINGLE_STRONGEST;
-        case wave_mode_farthest:
-          return ReturnMode::SINGLE_LAST;
-        case wave_mode_nearest:
-          return ReturnMode::SINGLE_FIRST;
-        default:
-          return ReturnMode::UNKNOWN;
-      }
+      return return_mode_from_wave_mode(info_packet.packet1.wave_mode.value());
     } else if (info_packet.packet256_received) {
       uint8_t rm = info_packet.packet256.return_mode.value();
       if (rm == 0x00) return ReturnMode::SINGLE_LAST;
@@ -334,15 +314,7 @@ public:
 
     auto corrected_data =
       angle_corrector.get_corrected_angle_data_emx(raw_yaw, real_chan, mirror_id);
-
-    float xy_dist = point.distance * corrected_data.cos_elevation;
-    point.x = xy_dist * corrected_data.cos_azimuth;
-    point.y = xy_dist * corrected_data.sin_azimuth;
-    point.z = point.distance * corrected_data.sin_elevation;
-
-    point.azimuth = corrected_data.azimuth_rad;
-    point.elevation = corrected_data.elevation_rad;
-    point.channel = static_cast<uint16_t>(real_chan);
+    populate_point_from_corrected_angle(point, corrected_data, static_cast<uint16_t>(real_chan));
   }
 };
 

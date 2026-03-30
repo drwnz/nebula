@@ -6,6 +6,7 @@ find_package(Boost REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PCAP REQUIRED libpcap)
 autoware_package()
+find_library(PCAP_LIBRARY pcap REQUIRED)
 
 # Robosense Decoder
 add_library(nebula_robosense_decoders SHARED src/robosense_driver.cpp)
@@ -32,7 +33,10 @@ target_link_libraries(
 target_compile_options(robosense_e1_pcap_dump PRIVATE ${PCAP_CFLAGS_OTHER})
 
 # Robosense Info Decoder
-add_library(nebula_robosense_decoders_info SHARED src/robosense_info_driver.cpp)
+add_library(
+  nebula_robosense_decoders_info SHARED
+  src/robosense_info_driver.cpp
+  src/em4_pcap_calibration.cpp)
 
 target_include_directories(
   nebula_robosense_decoders_info
@@ -44,7 +48,20 @@ target_link_libraries(
   PUBLIC nebula_core_common::nebula_core_common
          nebula_robosense_common::nebula_robosense_common
          nebula_core_decoders::nebula_core_decoders rclcpp::rclcpp
+         ${PCAP_LIBRARY}
          Boost::headers)
+
+add_executable(em4_pcap_extract tools/em4_pcap_extract.cpp)
+target_link_libraries(
+  em4_pcap_extract
+  PRIVATE nebula_robosense_decoders
+          nebula_robosense_decoders_info
+          nebula_core_common::nebula_core_common
+          nebula_robosense_common::nebula_robosense_common
+          nebula_core_decoders::nebula_core_decoders
+          rclcpp::rclcpp
+          ${PCAP_LIBRARY}
+          Boost::headers)
 
 install(TARGETS nebula_robosense_decoders
         EXPORT export_nebula_robosense_decoders)
@@ -52,6 +69,7 @@ install(TARGETS nebula_robosense_decoders_info
         EXPORT export_nebula_robosense_decoders_info)
 install(TARGETS robosense_e1_pcap_dump DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS scripts/plot_e1_csv.py DESTINATION lib/${PROJECT_NAME})
+install(TARGETS em4_pcap_extract DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
 if(BUILD_TESTING)

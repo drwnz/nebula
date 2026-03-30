@@ -211,6 +211,36 @@ void RobosenseRosWrapper::receive_info_packet_callback(std::vector<uint8_t> & pa
     return;
   }
 
+  if (!launch_hw_ && !replay_calibration_applied_) {
+    auto new_cfg = *sensor_cfg_ptr_;
+    auto sensor_return_mode = info_driver_->get_return_mode();
+    if (sensor_return_mode != drivers::ReturnMode::UNKNOWN) {
+      new_cfg.return_mode = sensor_return_mode;
+    }
+    new_cfg.use_sensor_time = info_driver_->get_sync_status();
+
+    auto calib = info_driver_->get_sensor_calibration();
+    calib.create_corrected_channels();
+
+    auto new_cfg_ptr =
+      std::make_shared<const nebula::drivers::RobosenseSensorConfiguration>(new_cfg);
+    status = validate_and_set_config(new_cfg_ptr);
+
+    if (status != nebula::Status::OK) {
+      RCLCPP_ERROR_STREAM_THROTTLE(
+        get_logger(), *get_clock(), 1000,
+        "Invalid replay config from sensor (" << status << "): " << new_cfg);
+      return;
+    }
+
+    auto calib_ptr =
+      std::make_shared<const nebula::drivers::RobosenseCalibrationConfiguration>(std::move(calib));
+    decoder_wrapper_.emplace(this, nullptr, sensor_cfg_ptr_, calib_ptr);
+    replay_calibration_applied_ = true;
+    RCLCPP_INFO_STREAM(
+      get_logger(), "Applied replay calibration from info packets: " << decoder_wrapper_->status());
+  }
+
   if (!decoder_wrapper_) {
     auto new_cfg = *sensor_cfg_ptr_;
 

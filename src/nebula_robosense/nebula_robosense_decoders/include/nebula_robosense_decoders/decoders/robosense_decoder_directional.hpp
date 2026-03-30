@@ -135,8 +135,11 @@ protected:
       for (size_t chan = 0; chan < SensorT::packet_t::n_channels; ++chan) {
         auto & unit = block.units[chan];
 
-        uint32_t packet_to_scan_offset_ns =
-          static_cast<uint32_t>(packet_timestamp_ns - decode_scan_timestamp_ns_);
+        const uint64_t packet_to_scan_offset_ns = packet_timestamp_ns - decode_scan_timestamp_ns_;
+        const int point_relative_time_offset_ns = sensor_.get_packet_relative_point_time_offset(
+          packet_, static_cast<uint32_t>(blk), static_cast<uint32_t>(chan), sensor_configuration_);
+        const uint32_t point_time_stamp_ns = static_cast<uint32_t>(
+          static_cast<int64_t>(packet_to_scan_offset_ns) + point_relative_time_offset_ns);
 
         // First return (always present)
         float dist = unit.distance.value() * distance_resolution_m_;
@@ -147,7 +150,7 @@ protected:
           point.return_type = is_dual_return ? static_cast<uint8_t>(ReturnType::STRONGEST)
                                              : static_cast<uint8_t>(ReturnType::STRONGEST);
           point.channel = static_cast<uint16_t>(chan);
-          point.time_stamp = packet_to_scan_offset_ns;
+          point.time_stamp = point_time_stamp_ns;
           if constexpr (SensorT::has_custom_projection) {
             sensor_.populate_point_xyz(
               point, packet_, static_cast<uint32_t>(blk), static_cast<uint32_t>(chan),
@@ -160,7 +163,7 @@ protected:
 
         // Second return (only for sensors with radius_sd, e.g. EMX, in dual mode)
         if (is_dual_return) {
-          decode_second_return(unit, chan, packet_to_scan_offset_ns);
+          decode_second_return(unit, chan, point_time_stamp_ns, static_cast<uint32_t>(blk));
         }
       }
     }
@@ -169,7 +172,7 @@ protected:
   /// @brief Decode second return from units that have radius_sd/intensity_sd (e.g. EMX).
   /// SFINAE-enabled: only compiles for unit types with radius_sd and intensity_sd members.
   template <typename U>
-  auto decode_second_return(const U & unit, size_t chan, uint32_t time_stamp_ns)
+  auto decode_second_return(const U & unit, size_t chan, uint32_t time_stamp_ns, uint32_t block_id)
     -> decltype(unit.radius_sd.value(), unit.intensity_sd.value(), void())
   {
     float dist_sd = unit.radius_sd.value() * distance_resolution_m_;
@@ -185,8 +188,7 @@ protected:
     point.time_stamp = time_stamp_ns;
     if constexpr (SensorT::has_custom_projection) {
       sensor_.populate_point_xyz(
-        point, packet_, static_cast<uint32_t>(chan), static_cast<uint32_t>(chan),
-        *angle_corrector_);
+        point, packet_, block_id, static_cast<uint32_t>(chan), *angle_corrector_);
     } else {
       populate_point_xyz(point, unit, dist_sd);
     }

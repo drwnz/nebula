@@ -82,36 +82,19 @@ struct Packet : public PacketBase<96, 1, 1, 1>
 
 struct InfoPacket
 {
-  big_uint64_buf_t header;             // offset 0, 8 bytes  (DIFOP header)
-  uint8_t res0[8];                     // offset 8, 8 bytes  (Reserved)
-  uint8_t sw_version[3];               // offset 16, 3 bytes (SW Version)
-  uint8_t res1[1];                     // offset 19, 1 byte  (Reserved)
-  uint8_t sn[6];                       // offset 20, 6 bytes (Serial Number)
-  uint8_t res2[18];                    // offset 26, 18 bytes (Reserved)
-  IpAddress local_ip;                  // offset 44, 4 bytes (LiDAR IP source)
-  IpAddress net_mask;                  // offset 48, 4 bytes (Subnet mask)
-  MacAddress mac_address;              // offset 52, 6 bytes (MAC address)
-  IpAddress msop_remote_ip;            // offset 58, 4 bytes (MSOP remote IP)
-  big_uint16_buf_t msop_local_port;    // offset 62, 2 bytes (MSOP local port)
-  big_uint16_buf_t msop_remote_port;   // offset 64, 2 bytes (MSOP remote port)
-  IpAddress difop_remote_ip;           // offset 66, 4 bytes (DIFOP remote IP)
-  big_uint16_buf_t difop_local_port;   // offset 70, 2 bytes (DIFOP local port)
-  big_uint16_buf_t difop_remote_port;  // offset 72, 2 bytes (DIFOP remote port)
-  uint8_t res3[25];                    // offset 74, 25 bytes (Reserved)
-  big_uint8_buf_t frequency_setting;   // offset 99, 1 byte  (Frame rate)
-  big_uint8_buf_t return_mode;         // offset 100, 1 byte (Return mode)
-  big_uint8_buf_t time_mode;           // offset 101, 1 byte (Time sync mode)
-  big_uint8_buf_t time_sync_status;    // offset 102, 1 byte (Time sync status)
-  Timestamp time;                      // offset 103, 10 bytes (Timestamp)
-  big_uint8_buf_t phy_mode;            // offset 113, 1 byte (PHY mode)
-  uint8_t res4[94];                    // offset 114, 94 bytes (Reserved)
-  big_int32_buf_t acceIx;              // offset 208, 4 bytes (IMU accel X)
-  big_int32_buf_t acceIy;              // offset 212, 4 bytes (IMU accel Y)
-  big_int32_buf_t acceIz;              // offset 216, 4 bytes (IMU accel Z)
-  big_int32_buf_t gyrox;               // offset 220, 4 bytes (IMU gyro X)
-  big_int32_buf_t gyroy;               // offset 224, 4 bytes (IMU gyro Y)
-  big_int32_buf_t gyroz;               // offset 228, 4 bytes (IMU gyro Z)
-  uint8_t res5[24];                    // offset 232, 24 bytes (Reserved)
+  big_uint64_buf_t header;
+  uint8_t reserved1[93];
+  big_uint8_buf_t time_mode;
+  big_uint8_buf_t time_sync_status;
+  Timestamp time;
+  uint8_t reserved2[95];
+  big_int32_buf_t acceIx;
+  big_int32_buf_t acceIy;
+  big_int32_buf_t acceIz;
+  big_int32_buf_t gyrox;
+  big_int32_buf_t gyroy;
+  big_int32_buf_t gyroz;
+  uint8_t reserved3[24];
 };  // total: 256 bytes
 
 #pragma pack(pop)
@@ -138,15 +121,6 @@ private:
   static constexpr uint8_t sync_mode_e2e_flag = 0x02;
   static constexpr uint8_t sync_mode_gptp_flag = 0x03;
 
-  // E1 DIFOP return mode byte values (from user manual)
-  static constexpr uint8_t return_mode_farthest = 0x00;
-  static constexpr uint8_t return_mode_strongest = 0x04;
-  static constexpr uint8_t return_mode_nearest = 0x07;
-  static constexpr uint8_t return_mode_2nd_strongest = 0x08;
-  static constexpr uint8_t return_mode_strongest_farthest = 0x09;
-  static constexpr uint8_t return_mode_nearest_farthest = 0x0A;
-  static constexpr uint8_t return_mode_strongest_2nd = 0x0B;
-
   static constexpr int VECTOR_BASE = 32768;
 
 public:
@@ -157,24 +131,9 @@ public:
   static constexpr float max_range = 200.f;
   static constexpr size_t max_scan_buffer_points = 260000;
 
-  ReturnMode get_return_mode(const robosense_packet::e1::InfoPacket & info_packet) override
+  ReturnMode get_return_mode(const robosense_packet::e1::InfoPacket & /*info_packet*/) override
   {
-    switch (info_packet.return_mode.value()) {
-      case return_mode_farthest:
-        return ReturnMode::SINGLE_LAST;
-      case return_mode_strongest:
-        return ReturnMode::SINGLE_STRONGEST;
-      case return_mode_nearest:
-        return ReturnMode::SINGLE_FIRST;
-      case return_mode_2nd_strongest:
-        return ReturnMode::SINGLE_STRONGEST;
-      case return_mode_strongest_farthest:
-      case return_mode_nearest_farthest:
-      case return_mode_strongest_2nd:
-        return ReturnMode::DUAL;
-      default:
-        return ReturnMode::UNKNOWN;
-    }
+    return ReturnMode::UNKNOWN;
   }
 
   std::map<std::string, std::string> get_sensor_info(
@@ -200,12 +159,12 @@ public:
     populate_sync_status_info(sensor_info, info_packet.time_sync_status.value());
     sensor_info["time"] = std::to_string(info_packet.time.get_time_in_ns());
 
-    // Network config from DIFOP
-    sensor_info["sensor_ip"] = info_packet.local_ip.to_string();
-    sensor_info["dest_ip"] = info_packet.msop_remote_ip.to_string();
-    sensor_info["msop_dst_port"] = std::to_string(info_packet.msop_remote_port.value());
-    sensor_info["difop_dst_port"] = std::to_string(info_packet.difop_remote_port.value());
     return sensor_info;
+  }
+
+  bool get_sync_status(const robosense_packet::e1::InfoPacket & info_packet) override
+  {
+    return info_packet.time_sync_status.value() == DirectionalSyncStatusFlags::success;
   }
 
   int get_packet_relative_point_time_offset(

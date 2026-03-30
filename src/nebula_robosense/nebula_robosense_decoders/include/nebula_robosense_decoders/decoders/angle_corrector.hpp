@@ -18,8 +18,10 @@
 
 #include <rclcpp/rclcpp.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace nebula::drivers
 {
@@ -34,6 +36,24 @@ struct CorrectedAngleData
   float cos_elevation;
   uint16_t corrected_channel_id;
 };
+
+inline std::vector<float> convert_angle_offsets_to_rad(
+  const std::vector<int16_t> & raw_values, float degrees_per_unit)
+{
+  std::vector<float> result;
+  result.reserve(raw_values.size());
+  for (auto value : raw_values) {
+    result.push_back(deg2rad(static_cast<float>(value) * degrees_per_unit));
+  }
+  return result;
+}
+
+inline CorrectedAngleData make_corrected_angle_data(
+  float yaw_rad, float pitch_rad, uint16_t corrected_channel_id)
+{
+  return {yaw_rad,         pitch_rad,       sinf(yaw_rad),       cosf(yaw_rad),
+          sinf(pitch_rad), cosf(pitch_rad), corrected_channel_id};
+}
 
 /// @brief Handles angle correction for given azimuth/channel combinations, as well as trigonometry
 /// lookup tables

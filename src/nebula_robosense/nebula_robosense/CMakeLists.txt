@@ -4,6 +4,7 @@ project(nebula_robosense)
 find_package(autoware_cmake REQUIRED)
 find_package(Boost REQUIRED)
 autoware_package()
+find_library(PCAP_LIBRARY pcap REQUIRED)
 
 # Robosense
 add_library(
@@ -38,10 +39,24 @@ rclcpp_components_register_node(
   robosense_ros_wrapper PLUGIN "RobosenseRosWrapper" EXECUTABLE
   robosense_ros_wrapper_node)
 
+add_executable(robosense_ros_pcap_replay tools/robosense_ros_pcap_replay.cpp)
+target_link_libraries(
+  robosense_ros_pcap_replay
+  Boost::headers
+  robosense_ros_wrapper
+  ${PCAP_LIBRARY})
+ament_target_dependencies(
+  robosense_ros_pcap_replay
+  rclcpp
+  sensor_msgs
+  robosense_msgs
+  nebula_msgs)
+
 install(
-  TARGETS robosense_ros_wrapper
+  TARGETS robosense_ros_wrapper robosense_ros_pcap_replay
   EXPORT export_robosense_ros_wrapper
-  LIBRARY DESTINATION lib)
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
 install(DIRECTORY config launch schema DESTINATION share/${PROJECT_NAME})
