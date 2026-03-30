@@ -72,7 +72,7 @@ struct Body
   Block blocks[96];
 };
 
-struct Packet : public PacketBase<1, 96, 1, 1>
+struct Packet : public PacketBase<96, 1, 1, 1>
 {
   typedef Body body_t;
   Header header;
