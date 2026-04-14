@@ -1,0 +1,14 @@
+/**:
+  ros__parameters:
+    host_ip: 127.0.0.1
+    sensor_ip: 127.0.0.1
+    data_port: 6699
+    gnss_port: 7788
+    packet_mtu_size: 1500
+    launch_hw: true
+    setup_sensor: false
+    frame_id: robosense
+    diag_span: 1000
+    dual_return_distance_threshold: 0.1
+    sensor_model: EMX
+    return_mode: Strongest

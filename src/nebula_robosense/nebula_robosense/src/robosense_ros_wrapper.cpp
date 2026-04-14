@@ -122,14 +122,14 @@ nebula::Status RobosenseRosWrapper::declare_and_get_sensor_config_params()
     rcl_interfaces::msg::ParameterDescriptor descriptor = param_read_write();
     descriptor.additional_constraints = "Angle where scans begin (degrees, [0.,360.])";
     descriptor.floating_point_range = float_range(0, 360, 0.01);
-    config.scan_phase = declare_parameter<double>("scan_phase", descriptor);
+    config.scan_phase = declare_parameter<double>("scan_phase", 0.0, descriptor);
   }
   {
     rcl_interfaces::msg::ParameterDescriptor descriptor = param_read_write();
     descriptor.additional_constraints = "Dual return distance threshold [0.01, 0.5]";
     descriptor.floating_point_range = float_range(0.01, 0.5, 0.01);
     config.dual_return_distance_threshold =
-      declare_parameter<double>("dual_return_distance_threshold", descriptor);
+      declare_parameter<double>("dual_return_distance_threshold", 0.1, descriptor);
   }
 
   auto new_cfg_ptr = std::make_shared<const nebula::drivers::RobosenseSensorConfiguration>(config);
@@ -179,6 +179,10 @@ void RobosenseRosWrapper::receive_scan_message_callback(
   }
 
   if (!decoder_wrapper_ || decoder_wrapper_->status() != Status::OK) {
+    return;
+  }
+
+  if (!decoder_wrapper_->has_active_subscribers()) {
     return;
   }
 
@@ -428,6 +432,10 @@ rcl_interfaces::msg::SetParametersResult RobosenseRosWrapper::on_parameter_chang
 void RobosenseRosWrapper::receive_cloud_packet_callback(std::vector<uint8_t> & packet)
 {
   if (!decoder_wrapper_ || decoder_wrapper_->status() != Status::OK) {
+    return;
+  }
+
+  if (!decoder_wrapper_->has_active_subscribers()) {
     return;
   }
 

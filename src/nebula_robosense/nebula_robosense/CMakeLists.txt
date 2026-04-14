@@ -57,6 +57,7 @@ install(
   EXPORT export_robosense_ros_wrapper
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/replay_robosense_pcap.py DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
 install(DIRECTORY config launch schema DESTINATION share/${PROJECT_NAME})
