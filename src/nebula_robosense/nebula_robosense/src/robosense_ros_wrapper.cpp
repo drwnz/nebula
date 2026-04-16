@@ -23,6 +23,23 @@
 
 namespace nebula::ros
 {
+std::shared_ptr<const nebula::drivers::RobosenseCalibrationConfiguration>
+RobosenseRosWrapper::make_default_directional_calibration() const
+{
+  auto calib = drivers::RobosenseCalibrationConfiguration();
+  if (sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_EMX) {
+    calib.set_channel_size(192);
+  } else if (sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_EM4) {
+    calib.set_channel_size(520);
+  } else if (sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_E1) {
+    calib.set_channel_size(128);
+  } else {
+    calib.set_channel_size(128);
+  }
+
+  return std::make_shared<const nebula::drivers::RobosenseCalibrationConfiguration>(std::move(calib));
+}
+
 RobosenseRosWrapper::RobosenseRosWrapper(const rclcpp::NodeOptions & options)
 : rclcpp::Node("robosense_ros_wrapper", rclcpp::NodeOptions(options).use_intra_process_comms(true)),
   wrapper_status_(Status::NOT_INITIALIZED),
@@ -53,6 +70,18 @@ RobosenseRosWrapper::RobosenseRosWrapper(const rclcpp::NodeOptions & options)
     info_packets_pub_ =
       create_publisher<robosense_msgs::msg::RobosenseInfoPacket>("robosense_info_packets", 10);
 
+    if (
+      sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_E1 ||
+      sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_EM4 ||
+      sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_EMX) {
+      decoder_wrapper_.emplace(
+        this, hw_interface_wrapper_->hw_interface(), sensor_cfg_ptr_, make_default_directional_calibration());
+      using_default_directional_calibration_ = true;
+      RCLCPP_INFO_STREAM(
+        get_logger(), "Initialized decoder wrapper with default directional calibration: "
+                        << decoder_wrapper_->status());
+    }
+
     hw_interface_wrapper_->hw_interface()->register_scan_callback(
       std::bind(&RobosenseRosWrapper::receive_cloud_packet_callback, this, std::placeholders::_1));
     hw_interface_wrapper_->hw_interface()->register_info_callback(
@@ -72,21 +101,7 @@ RobosenseRosWrapper::RobosenseRosWrapper(const rclcpp::NodeOptions & options)
                       << packets_sub_->get_topic_name() << " and "
                       << info_packets_sub_->get_topic_name());
 
-    // Initialize decoder wrapper with default calibration if in replay mode
-    auto calib = drivers::RobosenseCalibrationConfiguration();
-    if (sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_EMX) {
-      calib.set_channel_size(192);
-    } else if (sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_EM4) {
-      calib.set_channel_size(520);
-    } else if (sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_E1) {
-      calib.set_channel_size(128);
-    } else {
-      calib.set_channel_size(128);  // Fallback for others
-    }
-
-    auto calib_ptr =
-      std::make_shared<const nebula::drivers::RobosenseCalibrationConfiguration>(std::move(calib));
-    decoder_wrapper_.emplace(this, nullptr, sensor_cfg_ptr_, calib_ptr);
+    decoder_wrapper_.emplace(this, nullptr, sensor_cfg_ptr_, make_default_directional_calibration());
     RCLCPP_INFO_STREAM(
       get_logger(), "Initialized decoder wrapper for replay: " << decoder_wrapper_->status());
   }
@@ -213,6 +228,34 @@ void RobosenseRosWrapper::receive_info_packet_callback(std::vector<uint8_t> & pa
     RCLCPP_ERROR_STREAM_THROTTLE(
       get_logger(), *get_clock(), 1000, "Could not decode info packet: " << status);
     return;
+  }
+
+  if (launch_hw_ && using_default_directional_calibration_) {
+    auto new_cfg = *sensor_cfg_ptr_;
+    auto sensor_return_mode = info_driver_->get_return_mode();
+    if (sensor_return_mode != drivers::ReturnMode::UNKNOWN) {
+      new_cfg.return_mode = sensor_return_mode;
+    }
+    new_cfg.use_sensor_time = info_driver_->get_sync_status();
+
+    auto calib = info_driver_->get_sensor_calibration();
+    calib.create_corrected_channels();
+
+    auto new_cfg_ptr =
+      std::make_shared<const nebula::drivers::RobosenseSensorConfiguration>(new_cfg);
+    status = validate_and_set_config(new_cfg_ptr);
+
+    if (status == nebula::Status::OK) {
+      auto calib_ptr =
+        std::make_shared<const nebula::drivers::RobosenseCalibrationConfiguration>(std::move(calib));
+      decoder_wrapper_.emplace(
+        this, hw_interface_wrapper_ ? hw_interface_wrapper_->hw_interface() : nullptr,
+        sensor_cfg_ptr_, calib_ptr);
+      using_default_directional_calibration_ = false;
+      RCLCPP_INFO_STREAM(
+        get_logger(), "Updated decoder wrapper from sensor info packets: "
+                        << decoder_wrapper_->status());
+    }
   }
 
   if (!launch_hw_ && !replay_calibration_applied_) {
