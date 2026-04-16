@@ -94,6 +94,10 @@ private:
 
   std::optional<nebula::drivers::RobosenseInfoDriver> info_driver_;
   bool replay_calibration_applied_{false};
+  bool using_default_directional_calibration_{false};
+
+  std::shared_ptr<const nebula::drivers::RobosenseCalibrationConfiguration>
+  make_default_directional_calibration() const;
 
   std::mutex mtx_config_;
 
