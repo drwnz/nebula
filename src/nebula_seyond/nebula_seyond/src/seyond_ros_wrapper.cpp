@@ -20,13 +20,45 @@
 
 #include <boost/format.hpp>
 
+#include <algorithm>
+#include <limits>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace nebula::ros
 {
+
+namespace
+{
+
+builtin_interfaces::msg::Time clamp_ros_time(uint64_t timestamp_ns)
+{
+  builtin_interfaces::msg::Time stamp{};
+  const uint64_t max_ros_time_ns =
+    static_cast<uint64_t>(std::numeric_limits<int32_t>::max()) * 1000000000ULL + 999999999ULL;
+  const uint64_t clamped_timestamp_ns = std::min(timestamp_ns, max_ros_time_ns);
+  stamp.sec = static_cast<int32_t>(clamped_timestamp_ns / 1000000000ULL);
+  stamp.nanosec = static_cast<uint32_t>(clamped_timestamp_ns % 1000000000ULL);
+  return stamp;
+}
+
+nebula::drivers::SeyondCalibrationData load_calibration_file_or_throw(
+  const std::string & calibration_file)
+{
+  auto calibration_or_error =
+    nebula::drivers::SeyondCalibrationData::load_from_file(calibration_file);
+  if (!calibration_or_error.has_value()) {
+    throw std::runtime_error(
+      "Failed to load Seyond calibration file '" + calibration_file +
+      "': " + calibration_or_error.error().message);
+  }
+  return calibration_or_error.value();
+}
+
+}  // namespace
 
 SeyondRosWrapper::SeyondRosWrapper(const rclcpp::NodeOptions & options)
 : rclcpp::Node("seyond_ros_wrapper", options), diagnostic_updater_(this)
@@ -57,24 +89,17 @@ SeyondRosWrapper::SeyondRosWrapper(const rclcpp::NodeOptions & options)
       hw_monitor_wrapper_ = std::make_unique<SeyondHwMonitorWrapper>(
         this, diagnostic_updater_, hw_interface_, config_ptr);
       calibration = *hw_interface_wrapper_->calibration();
+      if (!calibration_file_.empty()) {
+        calibration = load_calibration_file_or_throw(calibration_file_);
+      }
     } catch (const std::exception & ex) {
       RCLCPP_ERROR(get_logger(), "Failed to initialize Seyond hardware wrappers: %s", ex.what());
     }
   } else {
     RCLCPP_INFO(
       get_logger(), "Hardware connection disabled (launch_hw:=false). Decoder only mode active.");
-
     if (!calibration_file_.empty()) {
-      auto calibration_or_error =
-        nebula::drivers::SeyondCalibrationData::load_from_file(calibration_file_);
-      if (!calibration_or_error.has_value()) {
-        throw std::runtime_error(calibration_or_error.error().message);
-      }
-      calibration = calibration_or_error.value();
-      RCLCPP_INFO_STREAM(
-        get_logger(), "Loaded Seyond calibration for replay from "
-                        << calibration_file_ << " (" << calibration.angle_hv_table.size()
-                        << " bytes)");
+      calibration = load_calibration_file_or_throw(calibration_file_);
     }
   }
 
@@ -155,6 +180,16 @@ void SeyondRosWrapper::process_packet(
 void SeyondRosWrapper::publish_cloud(
   nebula::drivers::NebulaPointCloudPtr cloud, uint64_t base_timestamp_ns)
 {
+  if (!cloud || cloud->empty()) {
+    return;
+  }
+
+  if (
+    cloud_pub_->get_subscription_count() == 0 &&
+    cloud_pub_->get_intra_process_subscription_count() == 0) {
+    return;
+  }
+
   if (current_scan_msg_ && !current_scan_msg_->packets.empty()) {
     packets_pub_->publish(std::move(current_scan_msg_));
     current_scan_msg_ = std::make_unique<nebula_msgs::msg::NebulaPackets>();
@@ -165,10 +200,9 @@ void SeyondRosWrapper::publish_cloud(
 
   ros_msg.header.frame_id = config_.frame_id;
 
-  if (config_.use_sensor_time && !cloud->empty()) {
+  if (config_.use_sensor_time) {
     uint64_t ts_ns = base_timestamp_ns + cloud->front().time_stamp;
-    ros_msg.header.stamp.sec = static_cast<int32_t>(ts_ns / 1000000000);
-    ros_msg.header.stamp.nanosec = static_cast<uint32_t>(ts_ns % 1000000000);
+    ros_msg.header.stamp = clamp_ros_time(ts_ns);
   } else {
     ros_msg.header.stamp = now();
   }
@@ -189,7 +223,6 @@ void SeyondRosWrapper::declare_parameters()
   declare_parameter<int>("udp_status_port", 8010);
   declare_parameter<bool>("use_sensor_time", false);
   declare_parameter<std::string>("frame_id", "seyond");
-  declare_parameter<std::string>("calibration_file", "");
   declare_parameter<bool>("setup_sensor", true);
   declare_parameter<std::string>("return_mode", "Single");
   declare_parameter<std::string>("reflectance_mode", "Reflectivity");
@@ -197,6 +230,7 @@ void SeyondRosWrapper::declare_parameters()
   declare_parameter<double>("frame_rate", 0.0);
   declare_parameter<double>("horizontal_roi", 10000.0);
   declare_parameter<double>("vertical_roi", 10000.0);
+  declare_parameter<std::string>("calibration_file", "");
 }
 
 void SeyondRosWrapper::get_parameters()

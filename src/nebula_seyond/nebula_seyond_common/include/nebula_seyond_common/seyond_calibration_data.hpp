@@ -78,11 +78,11 @@ struct SeyondDataPacketHeader
 };
 #pragma pack(pop)
 
-constexpr uint16_t kSeyondDataPacketMagic = 0x176A;
-constexpr uint8_t kRobinWAngleHvTableType = 100;
-constexpr uint8_t kRobinE1XAngleHvTableType = 101;
-constexpr uint8_t kHummingbirdAngleHvTableType = 103;
-constexpr uint8_t kRobinE2XAngleHvTableType = 104;
+constexpr uint16_t seyond_data_packet_magic = 0x176A;
+constexpr uint8_t robinw_angle_hv_table_type = 100;
+constexpr uint8_t robine1x_angle_hv_table_type = 101;
+constexpr uint8_t hummingbird_angle_hv_table_type = 103;
+constexpr uint8_t robine2x_angle_hv_table_type = 104;
 }  // namespace detail
 
 /// @brief Calibration data for Seyond LiDARs
@@ -109,8 +109,8 @@ struct SeyondCalibrationData
   static util::expected<SeyondCalibrationData, Error> load_from_file(
     const std::string & calibration_file)
   {
-    constexpr std::array<char, 12> k_magic{'S', 'E', 'Y', 'O', 'N', 'D',
-                                           '_', 'C', 'A', 'L', 'I', 'B'};
+    constexpr std::array<char, 12> CALIBRATION_FILE_MAGIC{'S', 'E', 'Y', 'O', 'N', 'D',
+                                                          '_', 'C', 'A', 'L', 'I', 'B'};
 
     std::ifstream file(calibration_file, std::ios::binary);
     if (!file.is_open()) {
@@ -119,9 +119,12 @@ struct SeyondCalibrationData
 
     SeyondCalibrationData calibration;
 
-    std::array<char, k_magic.size()> magic{};
-    file.read(magic.data(), static_cast<std::streamsize>(magic.size()));
-    if (file.good() && std::memcmp(magic.data(), k_magic.data(), k_magic.size()) == 0) {
+    std::array<char, CALIBRATION_FILE_MAGIC.size()> magic_check{};
+    file.read(magic_check.data(), static_cast<std::streamsize>(magic_check.size()));
+    if (
+      file.good() &&
+      std::memcmp(
+        magic_check.data(), CALIBRATION_FILE_MAGIC.data(), CALIBRATION_FILE_MAGIC.size()) == 0) {
       uint32_t version = 0;
       uint32_t angle_size = 0;
       uint32_t geo_size = 0;
@@ -190,11 +193,11 @@ struct SeyondCalibrationData
       const auto * packet =
         reinterpret_cast<const SeyondDataPacketHeader *>(calibration.angle_hv_table.data());
       const bool supported_anglehv_packet =
-        packet->common.magic_number == detail::kSeyondDataPacketMagic &&
-        (packet->type == detail::kRobinWAngleHvTableType ||
-         packet->type == detail::kRobinE1XAngleHvTableType ||
-         packet->type == detail::kHummingbirdAngleHvTableType ||
-         packet->type == detail::kRobinE2XAngleHvTableType);
+        packet->common.magic_number == detail::seyond_data_packet_magic &&
+        (packet->type == detail::robinw_angle_hv_table_type ||
+         packet->type == detail::robine1x_angle_hv_table_type ||
+         packet->type == detail::hummingbird_angle_hv_table_type ||
+         packet->type == detail::robine2x_angle_hv_table_type);
       if (!supported_anglehv_packet) {
         return;
       }
@@ -220,8 +223,8 @@ struct SeyondCalibrationData
   /// @brief Save calibration data to a binary file
   util::expected<std::monostate, Error> save_to_file(const std::string & calibration_file) const
   {
-    constexpr std::array<char, 12> k_magic{'S', 'E', 'Y', 'O', 'N', 'D',
-                                           '_', 'C', 'A', 'L', 'I', 'B'};
+    constexpr std::array<char, 12> CALIBRATION_FILE_MAGIC{'S', 'E', 'Y', 'O', 'N', 'D',
+                                                          '_', 'C', 'A', 'L', 'I', 'B'};
 
     std::ofstream file(calibration_file, std::ios::binary | std::ios::trunc);
     if (!file.is_open()) {
@@ -235,7 +238,8 @@ struct SeyondCalibrationData
     const auto geo_size = static_cast<uint32_t>(geo_yaml.size());
     const auto sn_size = static_cast<uint32_t>(sn_yaml.size());
 
-    file.write(k_magic.data(), static_cast<std::streamsize>(k_magic.size()));
+    file.write(
+      CALIBRATION_FILE_MAGIC.data(), static_cast<std::streamsize>(CALIBRATION_FILE_MAGIC.size()));
     file.write(reinterpret_cast<const char *>(&version), sizeof(version));
     file.write(reinterpret_cast<const char *>(&v_angle_offset), sizeof(v_angle_offset));
     file.write(reinterpret_cast<const char *>(&angle_size), sizeof(angle_size));

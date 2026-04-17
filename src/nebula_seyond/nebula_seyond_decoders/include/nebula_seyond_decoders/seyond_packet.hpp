@@ -33,7 +33,7 @@ struct SeyondPacketCommon
   uint8_t source_id : 4;
   uint8_t timestamp_sync_type : 4;
   uint8_t lidar_type;
-  uint64_t ts_start_us;
+  double ts_start_us;
   uint8_t lidar_mode;
   uint8_t lidar_status;
 };
@@ -65,6 +65,32 @@ struct SeyondDataPacket
   uint32_t extend_reserved[4];
 };
 
+struct SeyondFalconDataPacket
+{
+  SeyondPacketCommon common;
+  uint64_t idx;
+  uint16_t sub_idx;
+  uint16_t sub_seq;
+  uint32_t type : 8;
+  uint32_t item_number : 24;
+  uint16_t item_size;
+  uint32_t topic;
+  uint16_t scanner_direction : 1;
+  uint16_t use_reflectance : 1;
+  uint16_t multi_return_mode : 3;
+  uint16_t confidence_level : 2;
+  uint16_t is_last_sub_frame : 1;
+  uint16_t is_last_sequence : 1;
+  uint16_t has_tail : 1;
+  uint16_t frame_sync_locked : 1;
+  uint16_t is_first_sub_frame : 1;
+  uint16_t last_four_channel : 1;
+  uint16_t long_distance_mode : 1;
+  uint16_t reserved_flag : 2;
+  int16_t roi_h_angle;
+  int16_t roi_v_angle;
+};
+
 /// @brief Standard block header
 struct SeyondBlockHeader
 {
@@ -84,7 +110,7 @@ struct SeyondBlockHeader
   uint64_t reserved_flags : 2;
 };
 
-/// @brief FalconK standard channel point (SDK: InnoChannelPoint) — 4 bytes packed
+/// @brief FalconK standard channel point matching the vendor SDK layout, 4 bytes packed
 struct SeyondChannelPoint
 {
   /// distance unit: 1/200m (normal) or 1/100m (long_distance_mode)
@@ -99,6 +125,12 @@ struct SeyondBlock
 {
   SeyondBlockHeader header;
   SeyondChannelPoint points[4];
+};
+
+struct SeyondBlockDual
+{
+  SeyondBlockHeader header;
+  SeyondChannelPoint points[8];
 };
 
 /// @brief Enhanced block for Robin W / E1X

@@ -50,7 +50,7 @@ public:
   SeyondPacketDecodeResult unpack(const std::vector<uint8_t> & packet_data);
 
 private:
-  void parse_falcon_k(const SeyondDataPacket * packet);
+  void parse_falcon_k(const SeyondFalconDataPacket * packet);
   void parse_robin_w_e1x(const SeyondDataPacket * packet);
   void parse_robin_compact(const SeyondDataPacket * packet);
   void parse_hummingbird_d1(const SeyondDataPacket * packet);
@@ -62,6 +62,9 @@ private:
   SeyondCalibrationData calibration_;
   pointcloud_callback_t pointcloud_callback_;
   NebulaPointCloudPtr current_scan_cloud_;
+  uint64_t current_scan_frame_idx_{0};
+  uint64_t current_scan_start_timestamp_ns_{0};
+  bool has_current_scan_frame_{false};
 };
 
 }  // namespace nebula::drivers
