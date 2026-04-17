@@ -6,6 +6,10 @@ find_package(message_filters REQUIRED)
 find_package(tf2_ros REQUIRED)
 autoware_package()
 
+if("$ENV{ENABLE_AGNOCAST}" AND NOT agnocast_components_FOUND)
+  message(FATAL_ERROR "agnocast_components is required when Agnocast is enabled")
+endif()
+
 # # Continental
 
 # ARS548
@@ -25,8 +29,7 @@ target_link_libraries(
   PUBLIC diagnostic_updater::diagnostic_updater
          nebula_continental_decoders::nebula_continental_decoders
          nebula_continental_hw_interfaces::nebula_continental_hw_interfaces
-         nebula_core_ros::nebula_core_ros
-         pcl_common)
+         nebula_core_ros::nebula_core_ros)
 ament_target_dependencies(
   continental_ars548_ros_wrapper
   PUBLIC
@@ -35,7 +38,6 @@ ament_target_dependencies(
   continental_srvs
   diagnostic_msgs
   geometry_msgs
-  pcl_conversions
   nebula_msgs
   radar_msgs
   sensor_msgs
@@ -44,9 +46,16 @@ ament_target_dependencies(
   rclcpp_components
   tf2_ros)
 
-rclcpp_components_register_node(
-  continental_ars548_ros_wrapper PLUGIN "ContinentalARS548RosWrapper"
-  EXECUTABLE continental_ars548_ros_wrapper_node)
+if("$ENV{ENABLE_AGNOCAST}")
+  agnocast_components_register_node(
+    continental_ars548_ros_wrapper PLUGIN "ContinentalARS548RosWrapper"
+    EXECUTABLE continental_ars548_ros_wrapper_node
+    EXECUTOR CallbackIsolatedAgnocastExecutor)
+else()
+  rclcpp_components_register_node(
+    continental_ars548_ros_wrapper PLUGIN "ContinentalARS548RosWrapper"
+    EXECUTABLE continental_ars548_ros_wrapper_node)
+endif()
 
 # SRR520
 add_library(
@@ -64,8 +73,7 @@ target_link_libraries(
   continental_srr520_ros_wrapper
   PUBLIC nebula_continental_decoders::nebula_continental_decoders
          nebula_continental_hw_interfaces::nebula_continental_hw_interfaces
-         nebula_core_ros::nebula_core_ros
-         pcl_common)
+         nebula_core_ros::nebula_core_ros)
 
 ament_target_dependencies(
   continental_srr520_ros_wrapper
@@ -75,7 +83,6 @@ ament_target_dependencies(
   diagnostic_msgs
   geometry_msgs
   nebula_msgs
-  pcl_conversions
   radar_msgs
   sensor_msgs
   visualization_msgs
@@ -83,9 +90,15 @@ ament_target_dependencies(
   message_filters
   tf2_ros)
 
-rclcpp_components_register_node(
-  continental_srr520_ros_wrapper PLUGIN "ContinentalSRR520RosWrapper"
-  EXECUTABLE continental_srr520_ros_wrapper_node)
+if("$ENV{ENABLE_AGNOCAST}")
+  agnocast_components_register_node(
+    continental_srr520_ros_wrapper PLUGIN "ContinentalSRR520RosWrapper"
+    EXECUTABLE continental_srr520_ros_wrapper_node)
+else()
+  rclcpp_components_register_node(
+    continental_srr520_ros_wrapper PLUGIN "ContinentalSRR520RosWrapper"
+    EXECUTABLE continental_srr520_ros_wrapper_node)
+endif()
 
 install(
   TARGETS continental_ars548_ros_wrapper
@@ -101,7 +114,6 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(rosbag2_cpp REQUIRED)
-  find_package(PCL REQUIRED COMPONENTS common)
 
   ament_lint_auto_find_test_dependencies()
 
@@ -117,7 +129,7 @@ if(BUILD_TESTING)
                              PRIVATE tests include)
   target_link_libraries(
     continental_ros_decoder_test_ars548
-    PRIVATE nebula_core_common::nebula_core_common pcl_common
+    PRIVATE nebula_core_common::nebula_core_common
             rosbag2_cpp::rosbag2_cpp diagnostic_updater::diagnostic_updater
             nebula_continental_decoders::nebula_continental_decoders
             nebula_core_ros::nebula_core_ros)
@@ -142,7 +154,7 @@ if(BUILD_TESTING)
                              PRIVATE tests include)
   target_link_libraries(
     continental_ros_decoder_test_srr520 nebula_core_common::nebula_core_common
-    pcl_common rosbag2_cpp::rosbag2_cpp diagnostic_updater::diagnostic_updater
+    rosbag2_cpp::rosbag2_cpp diagnostic_updater::diagnostic_updater
     nebula_continental_decoders::nebula_continental_decoders
     nebula_core_ros::nebula_core_ros)
 
@@ -169,7 +181,6 @@ ament_export_targets(export_continental_ars548_ros_wrapper)
 ament_export_targets(export_continental_srr520_ros_wrapper)
 
 ament_export_dependencies(
-  PCL
   autoware_sensing_msgs
   continental_msgs
   continental_srvs
@@ -183,7 +194,6 @@ ament_export_dependencies(
   nebula_continental_hw_interfaces
   nebula_msgs
   nebula_core_ros
-  pcl_conversions
   radar_msgs
   rclcpp_components
   sensor_msgs
@@ -191,5 +201,9 @@ ament_export_dependencies(
   tf2_ros
   visualization_msgs
   yaml-cpp)
+
+if("$ENV{ENABLE_AGNOCAST}")
+  ament_export_dependencies(agnocast_components)
+endif()
 
 ament_package()

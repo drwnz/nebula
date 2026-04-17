@@ -16,13 +16,14 @@
 #define NEBULA_CONTINENTAL_ARS548_HW_INTERFACE_H
 
 #include "nebula_core_common/nebula_status.hpp"
-#include "nebula_core_hw_interfaces/nebula_hw_interfaces_common/connections/udp.hpp"
+#include "nebula_core_hw_interfaces/connections/udp.hpp"
 
 #include <nebula_continental_common/continental_ars548.hpp>
 #include <nebula_core_common/loggers/logger.hpp>
 
 #include <nebula_msgs/msg/nebula_packet.hpp>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
