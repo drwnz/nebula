@@ -6,9 +6,6 @@ find_package(Boost REQUIRED)
 autoware_package()
 
 find_package(diagnostic_updater REQUIRED)
-find_package(nebula_msgs REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(PCAP REQUIRED libpcap)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -43,7 +40,6 @@ ament_target_dependencies(
   seyond_ros_wrapper
   PUBLIC
   diagnostic_updater
-  nebula_msgs
   rclcpp
   rclcpp_components
   sensor_msgs)
@@ -68,8 +64,6 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_seyond_ros_wrapper tests/test_seyond_ros_wrapper.cpp)
   target_link_libraries(test_seyond_ros_wrapper seyond_ros_wrapper)
-  target_include_directories(test_seyond_ros_wrapper PRIVATE ${PCAP_INCLUDE_DIRS})
-  target_link_libraries(test_seyond_ros_wrapper ${PCAP_LIBRARIES})
 endif()
 
 if(BUILD_EXAMPLES)
@@ -89,7 +83,6 @@ ament_export_targets(export_nebula_seyond)
 ament_export_dependencies(
   Boost
   diagnostic_updater
-  nebula_msgs
   nebula_core_common
   nebula_core_ros
   nebula_seyond_common

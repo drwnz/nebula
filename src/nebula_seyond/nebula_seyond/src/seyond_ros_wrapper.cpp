@@ -25,7 +25,6 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace nebula::ros
@@ -70,10 +69,6 @@ SeyondRosWrapper::SeyondRosWrapper(const rclcpp::NodeOptions & options)
 
   cloud_pub_ =
     create_publisher<sensor_msgs::msg::PointCloud2>("seyond_points", rclcpp::SensorDataQoS());
-  packets_pub_ =
-    create_publisher<nebula_msgs::msg::NebulaPackets>("seyond_packets", rclcpp::SensorDataQoS());
-  current_scan_msg_ = std::make_unique<nebula_msgs::msg::NebulaPackets>();
-  current_scan_msg_->header.frame_id = config_.frame_id;
 
   nebula::drivers::SeyondCalibrationData calibration{};
 
@@ -95,24 +90,14 @@ SeyondRosWrapper::SeyondRosWrapper(const rclcpp::NodeOptions & options)
     } catch (const std::exception & ex) {
       RCLCPP_ERROR(get_logger(), "Failed to initialize Seyond hardware wrappers: %s", ex.what());
     }
-  } else {
-    RCLCPP_INFO(
-      get_logger(), "Hardware connection disabled (launch_hw:=false). Decoder only mode active.");
-    if (!calibration_file_.empty()) {
-      calibration = load_calibration_file_or_throw(calibration_file_);
-    }
+  } else if (!calibration_file_.empty()) {
+    calibration = load_calibration_file_or_throw(calibration_file_);
   }
 
   decoder_ = std::make_unique<nebula::drivers::SeyondDecoder>(
     config_,
     std::bind(&SeyondRosWrapper::publish_cloud, this, std::placeholders::_1, std::placeholders::_2),
     calibration);
-
-  if (!launch_hw_) {
-    packets_sub_ = create_subscription<nebula_msgs::msg::NebulaPackets>(
-      "seyond_packets", rclcpp::SensorDataQoS(),
-      std::bind(&SeyondRosWrapper::receive_scan_message_callback, this, std::placeholders::_1));
-  }
 
   if (launch_hw_ && hw_interface_) {
     auto status = hw_interface_->sensor_interface_start();
@@ -130,50 +115,7 @@ void SeyondRosWrapper::receive_packet_callback(
   std::vector<uint8_t> & packet,
   const nebula::drivers::connections::UdpSocket::RxMetadata & metadata)
 {
-  builtin_interfaces::msg::Time stamp{};
-  if (metadata.timestamp_ns.has_value()) {
-    rclcpp::Time received_time(*metadata.timestamp_ns);
-    stamp = received_time;
-  } else {
-    stamp = now();
-  }
-
-  process_packet(packet, stamp, true);
-}
-
-void SeyondRosWrapper::receive_scan_message_callback(
-  nebula_msgs::msg::NebulaPackets::UniquePtr scan_msg)
-{
-  if (launch_hw_) {
-    RCLCPP_WARN_THROTTLE(
-      get_logger(), *get_clock(), 5000,
-      "Ignoring received NebulaPackets. Launch with launch_hw:=false to enable replay mode.");
-    return;
-  }
-
-  for (const auto & packet_msg : scan_msg->packets) {
-    process_packet(packet_msg.data, packet_msg.stamp, false);
-  }
-}
-
-void SeyondRosWrapper::process_packet(
-  const std::vector<uint8_t> & packet, const builtin_interfaces::msg::Time & stamp,
-  bool collect_for_publish)
-{
-  if (
-    collect_for_publish && packets_pub_ &&
-    (packets_pub_->get_subscription_count() > 0 ||
-     packets_pub_->get_intra_process_subscription_count() > 0)) {
-    if (current_scan_msg_->packets.empty()) {
-      current_scan_msg_->header.stamp = stamp;
-    }
-
-    nebula_msgs::msg::NebulaPacket packet_msg;
-    packet_msg.stamp = stamp;
-    packet_msg.data = packet;
-    current_scan_msg_->packets.emplace_back(std::move(packet_msg));
-  }
-
+  (void)metadata;
   decoder_->unpack(packet);
 }
 
@@ -188,12 +130,6 @@ void SeyondRosWrapper::publish_cloud(
     cloud_pub_->get_subscription_count() == 0 &&
     cloud_pub_->get_intra_process_subscription_count() == 0) {
     return;
-  }
-
-  if (current_scan_msg_ && !current_scan_msg_->packets.empty()) {
-    packets_pub_->publish(std::move(current_scan_msg_));
-    current_scan_msg_ = std::make_unique<nebula_msgs::msg::NebulaPackets>();
-    current_scan_msg_->header.frame_id = config_.frame_id;
   }
 
   auto ros_msg = nebula::ros::to_ros_msg(cloud);
@@ -254,7 +190,6 @@ void SeyondRosWrapper::get_parameters()
     static_cast<uint16_t>(get_parameter("udp_status_port").as_int());
   config_.use_sensor_time = get_parameter("use_sensor_time").as_bool();
   config_.frame_id = get_parameter("frame_id").as_string();
-  calibration_file_ = get_parameter("calibration_file").as_string();
   config_.setup_sensor = get_parameter("setup_sensor").as_bool();
   config_.return_mode =
     nebula::drivers::return_mode_from_string_seyond(get_parameter("return_mode").as_string());
@@ -265,6 +200,7 @@ void SeyondRosWrapper::get_parameters()
   config_.frame_rate = get_parameter("frame_rate").as_double();
   config_.horizontal_roi = get_parameter("horizontal_roi").as_double();
   config_.vertical_roi = get_parameter("vertical_roi").as_double();
+  calibration_file_ = get_parameter("calibration_file").as_string();
 }
 
 }  // namespace nebula::ros
