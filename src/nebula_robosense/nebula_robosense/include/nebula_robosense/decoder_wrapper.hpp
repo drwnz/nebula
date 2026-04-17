@@ -46,6 +46,8 @@ public:
   void on_config_change(
     const std::shared_ptr<const nebula::drivers::RobosenseSensorConfiguration> & new_config);
 
+  bool has_active_subscribers() const;
+
   nebula::Status status();
 
 private:

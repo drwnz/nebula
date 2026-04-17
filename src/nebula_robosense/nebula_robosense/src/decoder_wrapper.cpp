@@ -64,9 +64,25 @@ RobosenseDecoderWrapper::RobosenseDecoderWrapper(
   RCLCPP_INFO(logger_, "Initialized decoder wrapper.");
 }
 
+bool RobosenseDecoderWrapper::has_active_subscribers() const
+{
+  const auto publisher_has_subscribers = [](const auto & publisher) {
+    return publisher && (publisher->get_subscription_count() > 0 ||
+                         publisher->get_intra_process_subscription_count() > 0);
+  };
+
+  return publisher_has_subscribers(packets_pub_) || publisher_has_subscribers(nebula_points_pub_) ||
+         publisher_has_subscribers(aw_points_base_pub_) ||
+         publisher_has_subscribers(aw_points_ex_pub_);
+}
+
 void RobosenseDecoderWrapper::process_cloud_packet(
   std::unique_ptr<nebula_msgs::msg::NebulaPacket> packet_msg)
 {
+  if (!has_active_subscribers()) {
+    return;
+  }
+
   // Accumulate packets for recording only if someone is subscribed to the topic (for performance)
   if (
     packets_pub_ && (packets_pub_->get_subscription_count() > 0 ||
