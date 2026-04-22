@@ -1,0 +1,212 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="online_sensor" default="true" description="If true, connect to live sensors. If false, launch decoder/replay mode without sensor setup.">
+    <choice value="true" />
+    <choice value="false" />
+  </arg>
+
+  <arg name="at128_namespace" default="at128" />
+  <arg name="at128_config_file" default="$(find-pkg-share nebula_hesai)/config/PandarAT128.param.yaml" />
+  <arg name="at128_correction_file" default="$(dirname)/calibration/AT128/PandarAT128.dat" />
+  <arg name="at128_frame_id" default="at128" />
+  <arg name="at128_host_ip" default="192.168.20.20" />
+  <arg name="at128_sensor_ip" default="192.168.20.128" />
+  <arg name="at128_multicast_ip" default="" />
+  <arg name="at128_data_port" default="2370" />
+  <arg name="at128_gnss_port" default="10110" />
+  <arg name="at128_udp_only" default="false" />
+
+  <arg name="ftx140_namespace" default="ftx140" />
+  <arg name="ftx140_config_file" default="$(find-pkg-share nebula_hesai)/config/FTX140.param.yaml" />
+  <arg name="ftx140_correction_file" default="$(dirname)/calibration/FTX140/ftx140.dat" />
+  <arg name="ftx140_frame_id" default="ftx140" />
+  <arg name="ftx140_host_ip" default="192.168.10.20" />
+  <arg name="ftx140_sensor_ip" default="192.168.10.140" />
+  <arg name="ftx140_multicast_ip" default="" />
+  <arg name="ftx140_data_port" default="2369" />
+  <arg name="ftx140_gnss_port" default="10110" />
+  <arg name="ftx140_udp_only" default="false" />
+
+  <arg name="ftx180_namespace" default="ftx180" />
+  <arg name="ftx180_config_file" default="$(find-pkg-share nebula_hesai)/config/FTX180.param.yaml" />
+  <arg name="ftx180_correction_file" default="$(dirname)/calibration/FTX180/ftx180.dat" />
+  <arg name="ftx180_frame_id" default="ftx180" />
+  <arg name="ftx180_host_ip" default="192.168.10.20" />
+  <arg name="ftx180_sensor_ip" default="192.168.10.180" />
+  <arg name="ftx180_multicast_ip" default="" />
+  <arg name="ftx180_data_port" default="2368" />
+  <arg name="ftx180_gnss_port" default="10110" />
+  <arg name="ftx180_udp_only" default="false" />
+
+  <arg name="ot128_namespace" default="ot128" />
+  <arg name="ot128_config_file" default="$(find-pkg-share nebula_hesai)/config/PandarQT128.param.yaml" />
+  <arg name="ot128_calibration_file" default="$(dirname)/calibration/OT128/PandarQT128.csv" />
+  <arg name="ot128_frame_id" default="ot128" />
+  <arg name="ot128_host_ip" default="192.168.40.20" />
+  <arg name="ot128_sensor_ip" default="192.168.40.202" />
+  <arg name="ot128_multicast_ip" default="" />
+  <arg name="ot128_data_port" default="2362" />
+  <arg name="ot128_gnss_port" default="10110" />
+  <arg name="ot128_udp_only" default="false" />
+
+  <arg name="robinw_namespace" default="robinw" />
+  <arg name="robinw_config_file" default="$(find-pkg-share nebula_seyond)/config/RobinW.param.yaml" />
+  <arg name="robinw_frame_id" default="robinw" />
+  <arg name="robinw_host_ip" default="192.168.1.20" />
+  <arg name="robinw_sensor_ip" default="192.168.1.102" />
+  <arg name="robinw_netmask" default="255.255.255.0" />
+  <arg name="robinw_gateway" default="0.0.0.0" />
+  <arg name="robinw_udp_port" default="2373" />
+  <arg name="robinw_udp_message_port" default="2373" />
+  <arg name="robinw_udp_status_port" default="2373" />
+  <arg name="robinw_calibration_file" default="$(dirname)/calibration/RobinW/anglehv_table.bin" />
+
+  <arg name="hummingbirdd1_namespace" default="hummingbirdd1" />
+  <arg name="hummingbirdd1_config_file" default="$(find-pkg-share nebula_seyond)/config/HummingbirdD1.param.yaml" />
+  <arg name="hummingbirdd1_frame_id" default="hummingbirdd1" />
+  <arg name="hummingbirdd1_host_ip" default="192.168.1.20" />
+  <arg name="hummingbirdd1_sensor_ip" default="192.168.1.110" />
+  <arg name="hummingbirdd1_netmask" default="255.255.255.0" />
+  <arg name="hummingbirdd1_gateway" default="0.0.0.0" />
+  <arg name="hummingbirdd1_udp_port" default="2371" />
+  <arg name="hummingbirdd1_udp_message_port" default="2371" />
+  <arg name="hummingbirdd1_udp_status_port" default="2371" />
+  <arg name="hummingbirdd1_calibration_file" default="$(dirname)/calibration/Hummingbird/anglehv_table.bin" />
+
+  <arg name="e1_namespace" default="e1" />
+  <arg name="e1_config_file" default="$(find-pkg-share nebula_robosense)/config/E1.param.yaml" />
+  <arg name="e1_frame_id" default="e1" />
+  <arg name="e1_launch_hw" default="$(var online_sensor)" />
+  <arg name="e1_host_ip" default="192.168.10.20" />
+  <arg name="e1_sensor_ip" default="192.168.10.101" />
+  <arg name="e1_data_port" default="6699" />
+  <arg name="e1_gnss_port" default="7788" />
+  <arg name="e1_diag_span" default="1000" />
+
+  <group>
+    <push-ros-namespace namespace="$(var at128_namespace)" />
+    <node pkg="nebula_hesai" exec="hesai_ros_wrapper_node" name="hesai_ros_wrapper" output="screen">
+      <param from="$(var at128_config_file)"/>
+      <param name="sensor_model" value="PandarAT128"/>
+      <param name="launch_hw" value="$(var online_sensor)"/>
+      <param name="setup_sensor" value="$(var online_sensor)"/>
+      <param name="udp_only" value="$(var at128_udp_only)"/>
+      <param name="correction_file" value="$(var at128_correction_file)"/>
+      <param name="frame_id" value="$(var at128_frame_id)"/>
+      <param name="host_ip" value="$(var at128_host_ip)"/>
+      <param name="sensor_ip" value="$(var at128_sensor_ip)"/>
+      <param name="multicast_ip" value="$(var at128_multicast_ip)"/>
+      <param name="data_port" value="$(var at128_data_port)"/>
+      <param name="gnss_port" value="$(var at128_gnss_port)"/>
+    </node>
+  </group>
+
+  <group>
+    <push-ros-namespace namespace="$(var ftx140_namespace)" />
+    <node pkg="nebula_hesai" exec="hesai_ros_wrapper_node" name="hesai_ros_wrapper" output="screen">
+      <param from="$(var ftx140_config_file)"/>
+      <param name="sensor_model" value="FTX140"/>
+      <param name="launch_hw" value="$(var online_sensor)"/>
+      <param name="setup_sensor" value="$(var online_sensor)"/>
+      <param name="udp_only" value="$(var ftx140_udp_only)"/>
+      <param name="correction_file" value="$(var ftx140_correction_file)"/>
+      <param name="frame_id" value="$(var ftx140_frame_id)"/>
+      <param name="host_ip" value="$(var ftx140_host_ip)"/>
+      <param name="sensor_ip" value="$(var ftx140_sensor_ip)"/>
+      <param name="multicast_ip" value="$(var ftx140_multicast_ip)"/>
+      <param name="data_port" value="$(var ftx140_data_port)"/>
+      <param name="gnss_port" value="$(var ftx140_gnss_port)"/>
+    </node>
+  </group>
+
+  <group>
+    <push-ros-namespace namespace="$(var ftx180_namespace)" />
+    <node pkg="nebula_hesai" exec="hesai_ros_wrapper_node" name="hesai_ros_wrapper" output="screen">
+      <param from="$(var ftx180_config_file)"/>
+      <param name="sensor_model" value="FTX180"/>
+      <param name="launch_hw" value="$(var online_sensor)"/>
+      <param name="setup_sensor" value="$(var online_sensor)"/>
+      <param name="udp_only" value="$(var ftx180_udp_only)"/>
+      <param name="correction_file" value="$(var ftx180_correction_file)"/>
+      <param name="frame_id" value="$(var ftx180_frame_id)"/>
+      <param name="host_ip" value="$(var ftx180_host_ip)"/>
+      <param name="sensor_ip" value="$(var ftx180_sensor_ip)"/>
+      <param name="multicast_ip" value="$(var ftx180_multicast_ip)"/>
+      <param name="data_port" value="$(var ftx180_data_port)"/>
+      <param name="gnss_port" value="$(var ftx180_gnss_port)"/>
+    </node>
+  </group>
+
+  <group>
+    <push-ros-namespace namespace="$(var ot128_namespace)" />
+    <node pkg="nebula_hesai" exec="hesai_ros_wrapper_node" name="hesai_ros_wrapper" output="screen">
+      <param from="$(var ot128_config_file)"/>
+      <param name="sensor_model" value="PandarQT128"/>
+      <param name="launch_hw" value="$(var online_sensor)"/>
+      <param name="setup_sensor" value="$(var online_sensor)"/>
+      <param name="udp_only" value="$(var ot128_udp_only)"/>
+      <param name="calibration_file" value="$(var ot128_calibration_file)"/>
+      <param name="frame_id" value="$(var ot128_frame_id)"/>
+      <param name="host_ip" value="$(var ot128_host_ip)"/>
+      <param name="sensor_ip" value="$(var ot128_sensor_ip)"/>
+      <param name="multicast_ip" value="$(var ot128_multicast_ip)"/>
+      <param name="data_port" value="$(var ot128_data_port)"/>
+      <param name="gnss_port" value="$(var ot128_gnss_port)"/>
+    </node>
+  </group>
+
+  <group>
+    <push-ros-namespace namespace="$(var robinw_namespace)" />
+    <node pkg="nebula_seyond" exec="seyond_ros_wrapper_node" name="seyond_ros_wrapper" output="screen">
+      <param from="$(var robinw_config_file)" allow_substs="true"/>
+      <param name="sensor_model" value="RobinW"/>
+      <param name="launch_hw" value="$(var online_sensor)"/>
+      <param name="setup_sensor" value="$(var online_sensor)"/>
+      <param name="frame_id" value="$(var robinw_frame_id)"/>
+      <param name="host_ip" value="$(var robinw_host_ip)"/>
+      <param name="sensor_ip" value="$(var robinw_sensor_ip)"/>
+      <param name="netmask" value="$(var robinw_netmask)"/>
+      <param name="gateway" value="$(var robinw_gateway)"/>
+      <param name="udp_port" value="$(var robinw_udp_port)"/>
+      <param name="udp_message_port" value="$(var robinw_udp_message_port)"/>
+      <param name="udp_status_port" value="$(var robinw_udp_status_port)"/>
+      <param name="calibration_file" value="$(var robinw_calibration_file)"/>
+    </node>
+  </group>
+
+  <group>
+    <push-ros-namespace namespace="$(var hummingbirdd1_namespace)" />
+    <node pkg="nebula_seyond" exec="seyond_ros_wrapper_node" name="seyond_ros_wrapper" output="screen">
+      <param from="$(var hummingbirdd1_config_file)" allow_substs="true"/>
+      <param name="sensor_model" value="HummingbirdD1"/>
+      <param name="launch_hw" value="$(var online_sensor)"/>
+      <param name="setup_sensor" value="$(var online_sensor)"/>
+      <param name="frame_id" value="$(var hummingbirdd1_frame_id)"/>
+      <param name="host_ip" value="$(var hummingbirdd1_host_ip)"/>
+      <param name="sensor_ip" value="$(var hummingbirdd1_sensor_ip)"/>
+      <param name="netmask" value="$(var hummingbirdd1_netmask)"/>
+      <param name="gateway" value="$(var hummingbirdd1_gateway)"/>
+      <param name="udp_port" value="$(var hummingbirdd1_udp_port)"/>
+      <param name="udp_message_port" value="$(var hummingbirdd1_udp_message_port)"/>
+      <param name="udp_status_port" value="$(var hummingbirdd1_udp_status_port)"/>
+      <param name="calibration_file" value="$(var hummingbirdd1_calibration_file)"/>
+    </node>
+  </group>
+
+  <group>
+    <push-ros-namespace namespace="$(var e1_namespace)" />
+    <node pkg="nebula_robosense" exec="robosense_ros_wrapper_node" name="robosense_ros_wrapper" output="screen">
+      <param from="$(var e1_config_file)" allow_substs="true"/>
+      <param name="sensor_model" value="E1"/>
+      <param name="launch_hw" value="$(var e1_launch_hw)"/>
+      <param name="frame_id" value="$(var e1_frame_id)"/>
+      <param name="host_ip" value="$(var e1_host_ip)"/>
+      <param name="sensor_ip" value="$(var e1_sensor_ip)"/>
+      <param name="data_port" value="$(var e1_data_port)"/>
+      <param name="gnss_port" value="$(var e1_gnss_port)"/>
+      <param name="diag_span" value="$(var e1_diag_span)"/>
+      <remap from="/robosense_packets" to="robosense_packets"/>
+      <remap from="/robosense_info_packets" to="robosense_info_packets"/>
+    </node>
+  </group>
+</launch>
