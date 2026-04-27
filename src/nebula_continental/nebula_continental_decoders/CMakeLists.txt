@@ -3,6 +3,13 @@ project(nebula_continental_decoders)
 
 find_package(autoware_cmake REQUIRED)
 find_package(Boost REQUIRED)
+find_package(nebula_core_common REQUIRED)
+find_package(nebula_core_decoders REQUIRED)
+find_package(nebula_continental_common REQUIRED)
+find_package(continental_msgs REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
+find_package(nebula_msgs REQUIRED)
+find_package(rclcpp REQUIRED)
 autoware_package()
 
 # Continental Decoder
@@ -25,8 +32,19 @@ target_link_libraries(
 ament_target_dependencies(nebula_continental_decoders PUBLIC continental_msgs
                           diagnostic_msgs nebula_msgs)
 
-install(TARGETS nebula_continental_decoders
-        EXPORT export_nebula_continental_decoders)
+# Continental Plugin Library
+add_library(nebula_continental_decoders_plugin SHARED src/continental_plugin.cpp)
+target_include_directories(nebula_continental_decoders_plugin PRIVATE include)
+target_link_libraries(nebula_continental_decoders_plugin PUBLIC nebula_continental_decoders)
+ament_target_dependencies(nebula_continental_decoders_plugin PUBLIC
+  nebula_core_common
+  nebula_core_decoders
+  nebula_continental_common
+  continental_msgs
+  nebula_msgs
+)
+
+install(TARGETS nebula_continental_decoders nebula_continental_decoders_plugin EXPORT export_nebula_continental_decoders)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
 ament_export_include_directories("include/${PROJECT_NAME}")

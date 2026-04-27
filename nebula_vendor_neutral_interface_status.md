@@ -34,8 +34,8 @@
 - [x] Hesai migration
 - [x] Robosense migration
 - [x] Seyond migration
-- [ ] Continental ARS548 migration
-- [ ] Continental SRR520 migration
+- [x] Continental ARS548 migration
+- [x] Continental SRR520 migration
 
 ## Phase 7: Enforcement and Deprecation
 - [ ] Add CI checks for plugin discovery

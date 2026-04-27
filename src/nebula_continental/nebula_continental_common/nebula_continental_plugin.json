@@ -1,0 +1,7 @@
+{
+  "vendor": "continental",
+  "package": "nebula_continental_decoders",
+  "library": "libnebula_continental_decoders_plugin.so",
+  "factory": "create_nebula_sensor_plugin",
+  "models": ["ARS548", "SRR520"]
+}

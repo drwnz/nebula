@@ -18,6 +18,7 @@ target_link_libraries(
 install(TARGETS nebula_continental_common
         EXPORT export_nebula_continental_common)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
+install(FILES nebula_continental_plugin.json DESTINATION share/${PROJECT_NAME})
 
 ament_export_targets(export_nebula_continental_common)
 ament_export_dependencies(Boost nebula_core_common)
