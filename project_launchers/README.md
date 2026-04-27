@@ -5,6 +5,7 @@ This folder contains the project-local launch and calibration assets for the RX2
 ## Files
 
 - [rx2_urban_eval_v1.xml](rx2_urban_eval_v1.xml)
+- [robinw_test.xml](robinw_test.xml)
 - [record_rx2_urban_eval_v1.sh](record_rx2_urban_eval_v1.sh)
 - `calibration/`
 
@@ -42,6 +43,21 @@ ros2 launch project_launchers/rx2_urban_eval_v1.xml online_sensor:=false
 ```
 
 The offline mode disables hardware setup and brings the wrappers up ready to subscribe to packet topics from rosbag replay.
+
+Launch only the RobinW sensor with the RX2 defaults:
+
+```bash
+ros2 launch project_launchers/robinw_test.xml
+```
+
+In live mode, Seyond sensors use calibration fetched from the sensor. If the configured calibration file path does not exist, the fetched calibration is saved there for offline replay.
+
+Launch only the RobinW decoder for packet replay:
+
+```bash
+ros2 launch project_launchers/robinw_test.xml online_sensor:=false \
+  robinw_calibration_file:=$PWD/project_launchers/calibration/RobinW/anglehv_table.bin
+```
 
 ## Parameter Structure
 

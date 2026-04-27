@@ -59,6 +59,7 @@
   <arg name="robinw_udp_port" default="2373" />
   <arg name="robinw_udp_message_port" default="2373" />
   <arg name="robinw_udp_status_port" default="2373" />
+  <arg name="robinw_diag_span" default="1000" />
   <arg name="robinw_calibration_file" default="$(dirname)/calibration/RobinW/anglehv_table.bin" />
 
   <arg name="hummingbirdd1_namespace" default="hummingbirdd1" />
@@ -71,6 +72,7 @@
   <arg name="hummingbirdd1_udp_port" default="2371" />
   <arg name="hummingbirdd1_udp_message_port" default="2371" />
   <arg name="hummingbirdd1_udp_status_port" default="2371" />
+  <arg name="hummingbirdd1_diag_span" default="1000" />
   <arg name="hummingbirdd1_calibration_file" default="$(dirname)/calibration/Hummingbird/anglehv_table.bin" />
 
   <arg name="e1_namespace" default="e1" />
@@ -170,6 +172,7 @@
       <param name="udp_port" value="$(var robinw_udp_port)"/>
       <param name="udp_message_port" value="$(var robinw_udp_message_port)"/>
       <param name="udp_status_port" value="$(var robinw_udp_status_port)"/>
+      <param name="diag_span" value="$(var robinw_diag_span)"/>
       <param name="calibration_file" value="$(var robinw_calibration_file)"/>
     </node>
   </group>
@@ -189,6 +192,7 @@
       <param name="udp_port" value="$(var hummingbirdd1_udp_port)"/>
       <param name="udp_message_port" value="$(var hummingbirdd1_udp_message_port)"/>
       <param name="udp_status_port" value="$(var hummingbirdd1_udp_status_port)"/>
+      <param name="diag_span" value="$(var hummingbirdd1_diag_span)"/>
       <param name="calibration_file" value="$(var hummingbirdd1_calibration_file)"/>
     </node>
   </group>

@@ -1,0 +1,40 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="online_sensor" default="true" description="If true, connect to the live RobinW. If false, launch decoder/replay mode without sensor setup.">
+    <choice value="true" />
+    <choice value="false" />
+  </arg>
+
+  <arg name="robinw_namespace" default="robinw" />
+  <arg name="robinw_config_file" default="$(find-pkg-share nebula_seyond)/config/RobinW.param.yaml" />
+  <arg name="robinw_frame_id" default="robinw" />
+  <arg name="robinw_host_ip" default="192.168.1.20" />
+  <arg name="robinw_sensor_ip" default="192.168.1.102" />
+  <arg name="robinw_netmask" default="255.255.255.0" />
+  <arg name="robinw_gateway" default="0.0.0.0" />
+  <arg name="robinw_udp_port" default="2373" />
+  <arg name="robinw_udp_message_port" default="2373" />
+  <arg name="robinw_udp_status_port" default="2373" />
+  <arg name="robinw_diag_span" default="1000" />
+  <arg name="robinw_calibration_file" default="$(dirname)/calibration/RobinW/anglehv_table.bin" />
+
+  <group>
+    <push-ros-namespace namespace="$(var robinw_namespace)" />
+    <node pkg="nebula_seyond" exec="seyond_ros_wrapper_node" name="seyond_ros_wrapper" output="screen">
+      <param from="$(var robinw_config_file)" allow_substs="true" />
+      <param name="sensor_model" value="RobinW" />
+      <param name="launch_hw" value="$(var online_sensor)" />
+      <param name="setup_sensor" value="$(var online_sensor)" />
+      <param name="frame_id" value="$(var robinw_frame_id)" />
+      <param name="host_ip" value="$(var robinw_host_ip)" />
+      <param name="sensor_ip" value="$(var robinw_sensor_ip)" />
+      <param name="netmask" value="$(var robinw_netmask)" />
+      <param name="gateway" value="$(var robinw_gateway)" />
+      <param name="udp_port" value="$(var robinw_udp_port)" />
+      <param name="udp_message_port" value="$(var robinw_udp_message_port)" />
+      <param name="udp_status_port" value="$(var robinw_udp_status_port)" />
+      <param name="diag_span" value="$(var robinw_diag_span)" />
+      <param name="calibration_file" value="$(var robinw_calibration_file)" />
+    </node>
+  </group>
+</launch>
