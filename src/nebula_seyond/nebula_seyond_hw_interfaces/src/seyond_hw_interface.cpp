@@ -393,6 +393,7 @@ SeyondHwInterface::get_calibration()
     try {
       std::string table_response = http_client_->get("/command/?get_anglehv_table", 2000);
       calibration.angle_hv_table.assign(table_response.begin(), table_response.end());
+      calibration.normalize_angle_hv_table();
     } catch (const std::exception &) {
     }
     if (

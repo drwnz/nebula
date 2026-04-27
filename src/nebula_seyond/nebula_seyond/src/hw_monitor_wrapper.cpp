@@ -27,7 +27,8 @@ SeyondHwMonitorWrapper::SeyondHwMonitorWrapper(
   parent_node_(parent_node),
   last_update_time_(std::make_unique<rclcpp::Time>(parent_node->get_clock()->now()))
 {
-  diag_span_ms_ = parent_node->declare_parameter<uint16_t>("diag_span", param_read_only());
+  diag_span_ms_ = static_cast<uint16_t>(
+    parent_node->declare_parameter<int>("diag_span", 1000, param_read_only()));
   initialize_diagnostics(diagnostic_updater);
 }
 

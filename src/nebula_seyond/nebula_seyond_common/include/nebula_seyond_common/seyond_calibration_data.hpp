@@ -105,6 +105,35 @@ struct SeyondCalibrationData
   /// @brief Raw binary serial-number yaml blob fetched from sensor (or loaded from file)
   std::vector<uint8_t> sn_yaml{};
 
+  void normalize_angle_hv_table()
+  {
+    using detail::SeyondDataPacketHeader;
+    if (angle_hv_table.size() < sizeof(SeyondDataPacketHeader)) {
+      return;
+    }
+
+    const auto * packet = reinterpret_cast<const SeyondDataPacketHeader *>(angle_hv_table.data());
+    const bool supported_anglehv_packet =
+      packet->common.magic_number == detail::seyond_data_packet_magic &&
+      (packet->type == detail::robinw_angle_hv_table_type ||
+       packet->type == detail::robine1x_angle_hv_table_type ||
+       packet->type == detail::hummingbird_angle_hv_table_type ||
+       packet->type == detail::robine2x_angle_hv_table_type);
+    if (!supported_anglehv_packet) {
+      return;
+    }
+
+    const size_t packet_size = packet->common.size;
+    if (packet_size < sizeof(SeyondDataPacketHeader) || packet_size > angle_hv_table.size()) {
+      return;
+    }
+
+    angle_hv_table.erase(
+      angle_hv_table.begin(),
+      angle_hv_table.begin() + static_cast<std::ptrdiff_t>(sizeof(SeyondDataPacketHeader)));
+    angle_hv_table.resize(packet_size - sizeof(SeyondDataPacketHeader));
+  }
+
   /// @brief Load calibration data from a binary file
   static util::expected<SeyondCalibrationData, Error> load_from_file(
     const std::string & calibration_file)
@@ -184,38 +213,7 @@ struct SeyondCalibrationData
     calibration.angle_hv_table.assign(
       std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 
-    const auto maybe_strip_packet_wrapper = [&calibration]() {
-      using detail::SeyondDataPacketHeader;
-      if (calibration.angle_hv_table.size() < sizeof(SeyondDataPacketHeader)) {
-        return;
-      }
-
-      const auto * packet =
-        reinterpret_cast<const SeyondDataPacketHeader *>(calibration.angle_hv_table.data());
-      const bool supported_anglehv_packet =
-        packet->common.magic_number == detail::seyond_data_packet_magic &&
-        (packet->type == detail::robinw_angle_hv_table_type ||
-         packet->type == detail::robine1x_angle_hv_table_type ||
-         packet->type == detail::hummingbird_angle_hv_table_type ||
-         packet->type == detail::robine2x_angle_hv_table_type);
-      if (!supported_anglehv_packet) {
-        return;
-      }
-
-      const size_t packet_size = packet->common.size;
-      if (
-        packet_size < sizeof(SeyondDataPacketHeader) ||
-        packet_size > calibration.angle_hv_table.size()) {
-        return;
-      }
-
-      calibration.angle_hv_table.erase(
-        calibration.angle_hv_table.begin(),
-        calibration.angle_hv_table.begin() +
-          static_cast<std::ptrdiff_t>(sizeof(SeyondDataPacketHeader)));
-      calibration.angle_hv_table.resize(packet_size - sizeof(SeyondDataPacketHeader));
-    };
-    maybe_strip_packet_wrapper();
+    calibration.normalize_angle_hv_table();
 
     return calibration;
   }
