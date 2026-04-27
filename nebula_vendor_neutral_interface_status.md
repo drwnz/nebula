@@ -31,7 +31,7 @@
 
 ## Phase 6: Vendor Adapter Migration
 - [x] Velodyne migration
-- [ ] Hesai migration
+- [x] Hesai migration
 - [ ] Robosense migration
 - [ ] Seyond migration
 - [ ] Continental ARS548 migration

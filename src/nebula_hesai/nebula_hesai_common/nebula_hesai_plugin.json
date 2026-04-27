@@ -1,0 +1,11 @@
+{
+  "vendor": "hesai",
+  "package": "nebula_hesai_decoders",
+  "library": "libnebula_hesai_decoders_plugin.so",
+  "factory": "create_nebula_sensor_plugin",
+  "models": [
+    "Pandar64", "Pandar40P", "Pandar40M", "PandarQT64", "PandarQT128", 
+    "PandarXT16", "PandarXT32", "PandarXT32M", "PandarAT128", 
+    "FTX140", "FTX180", "Pandar128_E3X", "Pandar128_E4X"
+  ]
+}

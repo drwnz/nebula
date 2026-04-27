@@ -20,7 +20,11 @@ target_link_libraries(
          nebula_core_decoders::nebula_core_decoders rclcpp::rclcpp
          Boost::headers)
 
-install(TARGETS nebula_hesai_decoders EXPORT export_nebula_hesai_decoders)
+# Hesai Plugin Library
+add_library(nebula_hesai_decoders_plugin SHARED src/hesai_plugin.cpp)
+target_link_libraries(nebula_hesai_decoders_plugin PUBLIC nebula_hesai_decoders)
+
+install(TARGETS nebula_hesai_decoders nebula_hesai_decoders_plugin EXPORT export_nebula_hesai_decoders)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
 install(DIRECTORY calibration DESTINATION share/${PROJECT_NAME})
