@@ -39,6 +39,13 @@ if(BUILD_TESTING)
     nebula_core_common
     nebula_core_decoders
   )
+
+  ament_add_gtest(test_sample_plugin_integration test/test_sample_plugin_integration.cpp)
+  target_link_libraries(test_sample_plugin_integration nebula_core_runtime)
+  ament_target_dependencies(test_sample_plugin_integration
+    nebula_core_common
+    nebula_core_decoders
+  )
 endif()
 
 install(TARGETS nebula_core_runtime EXPORT export_nebula_core_runtime)
