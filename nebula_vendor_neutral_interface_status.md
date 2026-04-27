@@ -18,11 +18,11 @@
 - [x] Add integration tests for sample sensor
 
 ## Phase 4: Generic Packet Sources and Router
-- [ ] Implement `UdpPacketSource`
-- [ ] Implement `PcapPacketSource`
+- [x] Implement `UdpPacketSource`
+- [x] Implement `PcapPacketSource`
 - [ ] Implement `CanPacketSource`
-- [ ] Implement Packet Router
-- [ ] Add unit tests for packet sources and router
+- [x] Implement Packet Router
+- [x] Add unit tests for packet sources and router
 
 ## Phase 5: Runtime Sessions
 - [ ] Implement `ReplaySessionRunner`

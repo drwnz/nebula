@@ -6,10 +6,12 @@ find_package(nlohmann_json REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem)
 find_package(nebula_core_common REQUIRED)
 find_package(nebula_core_decoders REQUIRED)
+find_package(nebula_core_hw_interfaces REQUIRED)
 autoware_package()
 
 add_library(nebula_core_runtime SHARED
   src/sensor_registry.cpp
+  src/packet_router.cpp
 )
 
 target_include_directories(
@@ -26,6 +28,7 @@ target_link_libraries(nebula_core_runtime
 ament_target_dependencies(nebula_core_runtime
   nebula_core_common
   nebula_core_decoders
+  nebula_core_hw_interfaces
 )
 
 if(BUILD_TESTING)
@@ -46,6 +49,13 @@ if(BUILD_TESTING)
     nebula_core_common
     nebula_core_decoders
   )
+
+  ament_add_gtest(test_packet_router test/test_packet_router.cpp)
+  target_link_libraries(test_packet_router nebula_core_runtime)
+  ament_target_dependencies(test_packet_router
+    nebula_core_common
+    nebula_core_decoders
+  )
 endif()
 
 install(TARGETS nebula_core_runtime EXPORT export_nebula_core_runtime)
@@ -54,6 +64,6 @@ install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 ament_export_include_directories("include/${PROJECT_NAME}")
 ament_export_targets(export_nebula_core_runtime)
 
-ament_export_dependencies(Boost nlohmann_json nebula_core_common nebula_core_decoders)
+ament_export_dependencies(Boost nlohmann_json nebula_core_common nebula_core_decoders nebula_core_hw_interfaces)
 
 ament_package()

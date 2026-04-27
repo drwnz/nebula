@@ -2,20 +2,30 @@ cmake_minimum_required(VERSION 3.14)
 project(nebula_core_hw_interfaces)
 
 find_package(autoware_cmake REQUIRED)
-autoware_package()
+find_package(ros_environment REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(PCAP REQUIRED libpcap)
 
-add_library(nebula_core_hw_interfaces INTERFACE)
+add_library(nebula_core_hw_interfaces SHARED 
+  src/pcap_packet_source.cpp
+  src/udp_packet_source.cpp
+)
 
 target_include_directories(
   nebula_core_hw_interfaces
-  INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-            $<INSTALL_INTERFACE:include>)
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+         $<INSTALL_INTERFACE:include>
+  PRIVATE ${PCAP_INCLUDE_DIRS})
 
 target_link_libraries(nebula_core_hw_interfaces
-                      INTERFACE nebula_core_common::nebula_core_common)
+                      PUBLIC nebula_core_common::nebula_core_common
+                      PRIVATE ${PCAP_LIBRARIES})
 
 install(TARGETS nebula_core_hw_interfaces
-        EXPORT export_nebula_core_hw_interfaces)
+        EXPORT export_nebula_core_hw_interfaces
+        ARCHIVE DESTINATION lib
+        LIBRARY DESTINATION lib
+        RUNTIME DESTINATION bin)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
 if(BUILD_TESTING)
@@ -52,7 +62,9 @@ if(BUILD_TESTING OR BUILD_EXAMPLES)
                         PRIVATE nebula_core_hw_interfaces)
 endif()
 
+ament_export_include_directories("include")
 ament_export_targets(export_nebula_core_hw_interfaces)
 ament_export_dependencies(nebula_core_common)
 
+autoware_package()
 ament_package()

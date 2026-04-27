@@ -1,0 +1,120 @@
+// Copyright 2024 TIER IV, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include <nebula_core_hw_interfaces/pcap_packet_source.hpp>
+
+#include <pcap.h>
+#include <netinet/ip.h>
+#include <netinet/udp.h>
+#include <net/ethernet.h>
+#include <arpa/inet.h>
+
+#include <iostream>
+
+namespace nebula::drivers
+{
+
+PcapPacketSource::PcapPacketSource() {}
+
+PcapPacketSource::~PcapPacketSource()
+{
+  stop();
+}
+
+void PcapPacketSource::open(const std::string & pcap_file)
+{
+  pcap_file_ = pcap_file;
+}
+
+void PcapPacketSource::set_packet_callback(SensorPacketCallback callback)
+{
+  callback_ = callback;
+}
+
+void PcapPacketSource::start()
+{
+  if (running_) return;
+  running_ = true;
+  thread_ = std::thread(&PcapPacketSource::run, this);
+}
+
+void PcapPacketSource::stop()
+{
+  running_ = false;
+  if (thread_.joinable()) {
+    thread_.join();
+  }
+}
+
+void PcapPacketSource::run()
+{
+  char errbuf[PCAP_ERRBUF_SIZE];
+  pcap_t * handle = pcap_open_offline(pcap_file_.c_str(), errbuf);
+  if (!handle) {
+    std::cerr << "Could not open PCAP file: " << errbuf << std::endl;
+    running_ = false;
+    return;
+  }
+
+  struct pcap_pkthdr * header;
+  const u_char * pkt_data;
+
+  while (running_ && pcap_next_ex(handle, &header, &pkt_data) >= 0) {
+    struct ether_header * eth_hdr = (struct ether_header *)pkt_data;
+    if (ntohs(eth_hdr->ether_type) != ETHERTYPE_IP) continue;
+
+    struct ip * ip_hdr = (struct ip *)(pkt_data + sizeof(struct ether_header));
+    if (ip_hdr->ip_p != IPPROTO_UDP) continue;
+
+    size_t ip_hdr_len = ip_hdr->ip_hl * 4;
+    struct udphdr * udp_hdr = (struct udphdr *)(pkt_data + sizeof(struct ether_header) + ip_hdr_len);
+
+    uint16_t src_port = ntohs(udp_hdr->uh_sport);
+    uint16_t dst_port = ntohs(udp_hdr->uh_dport);
+    
+    char src_ip[INET_ADDRSTRLEN];
+    char dst_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(ip_hdr->ip_src), src_ip, INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, &(ip_hdr->ip_dst), dst_ip, INET_ADDRSTRLEN);
+
+    const u_char * payload = pkt_data + sizeof(struct ether_header) + ip_hdr_len + sizeof(struct udphdr);
+    uint16_t payload_len = ntohs(udp_hdr->uh_ulen) - sizeof(struct udphdr);
+
+    if (callback_) {
+      SensorPacket sp;
+      sp.transport = SensorTransportKind::Replay;
+      sp.channel = SensorPacketChannel::Unknown; // To be assigned by router
+      sp.timestamp_ns = static_cast<uint64_t>(header->ts.tv_sec) * 1000000000ULL + header->ts.tv_usec * 1000ULL;
+      
+      SensorEndpoint src;
+      src.address = src_ip;
+      src.port = src_port;
+      sp.source = src;
+
+      SensorEndpoint dst;
+      dst.address = dst_ip;
+      dst.port = dst_port;
+      sp.destination = dst;
+
+      sp.payload.assign(payload, payload + payload_len);
+      
+      callback_(sp);
+    }
+  }
+
+  pcap_close(handle);
+  running_ = false;
+}
+
+}  // namespace nebula::drivers
