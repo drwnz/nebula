@@ -37,10 +37,13 @@ target_link_libraries(
          nebula_core_decoders::nebula_core_decoders rclcpp::rclcpp
          Boost::headers)
 
-install(TARGETS nebula_robosense_decoders
-        EXPORT export_nebula_robosense_decoders)
-install(TARGETS nebula_robosense_decoders_info
-        EXPORT export_nebula_robosense_decoders_info)
+# Robosense Plugin Library
+add_library(nebula_robosense_decoders_plugin SHARED src/robosense_plugin.cpp)
+target_link_libraries(nebula_robosense_decoders_plugin PUBLIC nebula_robosense_decoders)
+
+install(TARGETS nebula_robosense_decoders EXPORT export_nebula_robosense_decoders)
+install(TARGETS nebula_robosense_decoders_info EXPORT export_nebula_robosense_decoders_info)
+install(TARGETS nebula_robosense_decoders_plugin DESTINATION lib)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
 if(BUILD_TESTING)

@@ -1,0 +1,7 @@
+{
+  "vendor": "robosense",
+  "package": "nebula_robosense_decoders",
+  "library": "libnebula_robosense_decoders_plugin.so",
+  "factory": "create_nebula_sensor_plugin",
+  "models": ["Helios", "Bpearl_V3", "Bpearl_V4", "E1", "EM4", "EMX"]
+}

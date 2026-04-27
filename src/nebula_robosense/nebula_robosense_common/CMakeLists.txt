@@ -15,6 +15,7 @@ target_link_libraries(nebula_robosense_common
 
 install(TARGETS nebula_robosense_common EXPORT export_nebula_robosense_common)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
+install(FILES nebula_robosense_plugin.json DESTINATION share/${PROJECT_NAME})
 
 ament_export_targets(export_nebula_robosense_common)
 ament_export_dependencies(nebula_core_common)
