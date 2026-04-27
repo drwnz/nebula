@@ -11,11 +11,11 @@
 - [x] Add unit tests for plugin registry
 
 ## Phase 3: Sample Sensor Migration
-- [ ] Update `nebula_sample_common` with registry descriptor and schemas
-- [ ] Update `nebula_sample_decoders` to implement `SensorPlugin` and `SensorDecoderRuntime`
+- [x] Update `nebula_sample_common` with registry descriptor and schemas
+- [x] Update `nebula_sample_decoders` to implement `SensorPlugin` and `SensorDecoderRuntime`
 - [ ] Update `nebula_sample_hw_interfaces`
 - [ ] Update sample ROS wrapper
-- [ ] Add integration tests for sample sensor
+- [x] Add integration tests for sample sensor
 
 ## Phase 4: Generic Packet Sources and Router
 - [ ] Implement `UdpPacketSource`

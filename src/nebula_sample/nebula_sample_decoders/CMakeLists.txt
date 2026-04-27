@@ -18,7 +18,11 @@ target_link_libraries(
          nebula_sample_common::nebula_sample_common
          nebula_core_decoders::nebula_core_decoders)
 
-install(TARGETS nebula_sample_decoders EXPORT export_nebula_sample_decoders)
+# Sample Plugin Library
+add_library(nebula_sample_decoders_plugin SHARED src/sample_plugin.cpp)
+target_link_libraries(nebula_sample_decoders_plugin PUBLIC nebula_sample_decoders)
+
+install(TARGETS nebula_sample_decoders nebula_sample_decoders_plugin EXPORT export_nebula_sample_decoders)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
 ament_export_include_directories("include/${PROJECT_NAME}")

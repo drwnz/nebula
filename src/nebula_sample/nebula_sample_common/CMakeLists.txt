@@ -16,6 +16,7 @@ target_link_libraries(nebula_sample_common
 
 install(TARGETS nebula_sample_common EXPORT export_nebula_sample_common)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
+install(FILES nebula_sample_plugin.json DESTINATION share/${PROJECT_NAME})
 
 ament_export_targets(export_nebula_sample_common)
 ament_export_dependencies(nebula_core_common nebula_core_decoders)

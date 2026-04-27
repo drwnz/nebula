@@ -208,7 +208,8 @@ enum class SensorModel : uint8_t {
   ROBOSENSE_EM4,
   ROBOSENSE_EMX,
   CONTINENTAL_ARS548,
-  CONTINENTAL_SRR520
+  CONTINENTAL_SRR520,
+  SAMPLE
 };
 
 enum class PtpProfile : uint8_t {
@@ -309,6 +310,9 @@ inline std::ostream & operator<<(std::ostream & os, nebula::drivers::SensorModel
       break;
     case SensorModel::CONTINENTAL_SRR520:
       os << "SRR520";
+      break;
+    case SensorModel::SAMPLE:
+      os << "Sample";
       break;
     case SensorModel::UNKNOWN:
       os << "Sensor Unknown";
@@ -449,6 +453,8 @@ inline SensorModel sensor_model_from_string(const std::string & sensor_model)
   // Continental
   if (sensor_model == "ARS548") return SensorModel::CONTINENTAL_ARS548;
   if (sensor_model == "SRR520") return SensorModel::CONTINENTAL_SRR520;
+  // Sample
+  if (sensor_model == "Sample") return SensorModel::SAMPLE;
   return SensorModel::UNKNOWN;
 }
 
@@ -511,6 +517,8 @@ inline std::string sensor_model_to_string(const SensorModel & sensor_model)
       return "ARS548";
     case SensorModel::CONTINENTAL_SRR520:
       return "SRR520";
+    case SensorModel::SAMPLE:
+      return "Sample";
     default:
       return "UNKNOWN";
   }
