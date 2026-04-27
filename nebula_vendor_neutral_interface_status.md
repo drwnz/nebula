@@ -25,9 +25,9 @@
 - [x] Add unit tests for packet sources and router
 
 ## Phase 5: Runtime Sessions
-- [ ] Implement `ReplaySessionRunner`
+- [x] Implement `ReplaySessionRunner`
 - [ ] Implement `LiveTransportGraph`
-- [ ] Add integration tests for sessions
+- [x] Add integration tests for sessions
 
 ## Phase 6: Vendor Adapter Migration
 - [ ] Velodyne migration

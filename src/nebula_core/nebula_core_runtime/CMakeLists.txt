@@ -12,6 +12,7 @@ autoware_package()
 add_library(nebula_core_runtime SHARED
   src/sensor_registry.cpp
   src/packet_router.cpp
+  src/replay_session_runner.cpp
 )
 
 target_include_directories(
@@ -55,6 +56,14 @@ if(BUILD_TESTING)
   ament_target_dependencies(test_packet_router
     nebula_core_common
     nebula_core_decoders
+  )
+
+  ament_add_gtest(test_replay_session_runner test/test_replay_session_runner.cpp)
+  target_link_libraries(test_replay_session_runner nebula_core_runtime)
+  ament_target_dependencies(test_replay_session_runner
+    nebula_core_common
+    nebula_core_decoders
+    nebula_core_hw_interfaces
   )
 endif()
 
