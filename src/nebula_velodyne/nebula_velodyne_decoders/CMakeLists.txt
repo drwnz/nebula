@@ -28,7 +28,11 @@ ament_target_dependencies(
 
 target_link_libraries(nebula_velodyne_decoders PUBLIC Boost::headers)
 
-install(TARGETS nebula_velodyne_decoders EXPORT export_nebula_velodyne_decoders)
+# Velodyne Plugin Library
+add_library(nebula_velodyne_decoders_plugin SHARED src/velodyne_plugin.cpp)
+target_link_libraries(nebula_velodyne_decoders_plugin PUBLIC nebula_velodyne_decoders)
+
+install(TARGETS nebula_velodyne_decoders nebula_velodyne_decoders_plugin EXPORT export_nebula_velodyne_decoders)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
 install(DIRECTORY calibration DESTINATION share/${PROJECT_NAME})

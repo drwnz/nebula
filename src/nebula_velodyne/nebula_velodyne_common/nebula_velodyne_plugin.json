@@ -1,0 +1,7 @@
+{
+  "vendor": "velodyne",
+  "package": "nebula_velodyne_decoders",
+  "library": "libnebula_velodyne_decoders_plugin.so",
+  "factory": "create_nebula_sensor_plugin",
+  "models": ["VLS128", "HDL64", "VLP32", "VLP32MR", "HDL32", "VLP16"]
+}

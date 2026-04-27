@@ -30,7 +30,7 @@
 - [x] Add integration tests for sessions
 
 ## Phase 6: Vendor Adapter Migration
-- [ ] Velodyne migration
+- [x] Velodyne migration
 - [ ] Hesai migration
 - [ ] Robosense migration
 - [ ] Seyond migration

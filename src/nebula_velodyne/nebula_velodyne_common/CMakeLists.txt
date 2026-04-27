@@ -19,6 +19,7 @@ target_link_libraries(nebula_velodyne_common PUBLIC yaml-cpp)
 
 install(TARGETS nebula_velodyne_common EXPORT export_nebula_velodyne_common)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
+install(FILES nebula_velodyne_plugin.json DESTINATION share/${PROJECT_NAME})
 
 ament_export_include_directories("include/${PROJECT_NAME}")
 ament_export_targets(export_nebula_velodyne_common)
