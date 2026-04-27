@@ -21,6 +21,7 @@
 #include <boost/format.hpp>
 
 #include <algorithm>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -57,6 +58,59 @@ nebula::drivers::SeyondCalibrationData load_calibration_file_or_throw(
   return calibration_or_error.value();
 }
 
+void save_calibration_if_missing(
+  const rclcpp::Logger & logger, const nebula::drivers::SeyondCalibrationData & calibration,
+  const std::string & calibration_file)
+{
+  if (calibration_file.empty()) {
+    return;
+  }
+
+  const std::filesystem::path calibration_path{calibration_file};
+  std::error_code error;
+  if (std::filesystem::exists(calibration_path, error)) {
+    return;
+  }
+  if (error) {
+    RCLCPP_WARN(
+      logger, "Could not check Seyond calibration file '%s': %s", calibration_file.c_str(),
+      error.message().c_str());
+    return;
+  }
+
+  if (
+    calibration.angle_hv_table.empty() && calibration.geo_yaml.empty() &&
+    calibration.sn_yaml.empty() && calibration.v_angle_offset == 0.0) {
+    RCLCPP_WARN(
+      logger,
+      "Seyond calibration file '%s' does not exist, but fetched calibration is empty. Not saving.",
+      calibration_file.c_str());
+    return;
+  }
+
+  const auto parent_path = calibration_path.parent_path();
+  if (!parent_path.empty()) {
+    std::filesystem::create_directories(parent_path, error);
+    if (error) {
+      RCLCPP_WARN(
+        logger, "Could not create Seyond calibration directory '%s': %s",
+        parent_path.string().c_str(), error.message().c_str());
+      return;
+    }
+  }
+
+  auto save_result = calibration.save_to_file(calibration_file);
+  if (!save_result.has_value()) {
+    RCLCPP_WARN(
+      logger, "Failed to save Seyond calibration file '%s': %s", calibration_file.c_str(),
+      save_result.error().message.c_str());
+    return;
+  }
+
+  RCLCPP_INFO(
+    logger, "Saved Seyond calibration fetched from sensor to '%s'", calibration_file.c_str());
+}
+
 }  // namespace
 
 SeyondRosWrapper::SeyondRosWrapper(const rclcpp::NodeOptions & options)
@@ -71,6 +125,7 @@ SeyondRosWrapper::SeyondRosWrapper(const rclcpp::NodeOptions & options)
     create_publisher<sensor_msgs::msg::PointCloud2>("seyond_points", rclcpp::SensorDataQoS());
 
   nebula::drivers::SeyondCalibrationData calibration{};
+  std::string calibration_source{"defaults"};
 
   if (launch_hw_) {
     auto config_ptr = std::make_shared<const nebula::drivers::SeyondSensorConfiguration>(config_);
@@ -84,14 +139,37 @@ SeyondRosWrapper::SeyondRosWrapper(const rclcpp::NodeOptions & options)
       hw_monitor_wrapper_ = std::make_unique<SeyondHwMonitorWrapper>(
         this, diagnostic_updater_, hw_interface_, config_ptr);
       calibration = *hw_interface_wrapper_->calibration();
-      if (!calibration_file_.empty()) {
-        calibration = load_calibration_file_or_throw(calibration_file_);
-      }
+      calibration_source = "sensor";
+      save_calibration_if_missing(get_logger(), calibration, calibration_file_);
     } catch (const std::exception & ex) {
       RCLCPP_ERROR(get_logger(), "Failed to initialize Seyond hardware wrappers: %s", ex.what());
     }
-  } else if (!calibration_file_.empty()) {
-    calibration = load_calibration_file_or_throw(calibration_file_);
+  } else {
+    packets_sub_ = create_subscription<nebula_msgs::msg::NebulaPackets>(
+      "seyond_packets", rclcpp::SensorDataQoS(),
+      std::bind(&SeyondRosWrapper::receive_packets_ros_callback, this, std::placeholders::_1));
+
+    if (!calibration_file_.empty()) {
+      calibration = load_calibration_file_or_throw(calibration_file_);
+      calibration_source = calibration_file_;
+    }
+  }
+
+  RCLCPP_INFO(
+    get_logger(),
+    "Seyond calibration source: %s, angle_hv_table_bytes=%zu, geo_yaml_bytes=%zu, "
+    "sn_yaml_bytes=%zu, v_angle_offset=%.3f",
+    calibration_source.c_str(), calibration.angle_hv_table.size(), calibration.geo_yaml.size(),
+    calibration.sn_yaml.size(), calibration.v_angle_offset);
+  if (
+    (config_.sensor_model == nebula::drivers::SeyondSensorModel::ROBIN_W ||
+     config_.sensor_model == nebula::drivers::SeyondSensorModel::ROBIN_E1X ||
+     config_.sensor_model == nebula::drivers::SeyondSensorModel::HUMMINGBIRD_D1) &&
+    calibration.angle_hv_table.empty()) {
+    RCLCPP_WARN(
+      get_logger(),
+      "Seyond anglehv calibration table is empty. Point cloud geometry will use packet fallback "
+      "angles.");
   }
 
   decoder_ = std::make_unique<nebula::drivers::SeyondDecoder>(
