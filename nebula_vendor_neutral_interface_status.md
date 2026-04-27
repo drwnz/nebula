@@ -7,8 +7,8 @@
 - [x] Add unit tests for core types and interfaces
 
 ## Phase 2: Plugin Registry
-- [ ] Implement plugin descriptor loading and shared-library loading in `nebula_core_runtime`
-- [ ] Add unit tests for plugin registry
+- [x] Implement plugin descriptor loading and shared-library loading in `nebula_core_runtime`
+- [x] Add unit tests for plugin registry
 
 ## Phase 3: Sample Sensor Migration
 - [ ] Update `nebula_sample_common` with registry descriptor and schemas
