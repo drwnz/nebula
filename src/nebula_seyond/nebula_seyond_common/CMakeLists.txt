@@ -18,6 +18,7 @@ target_link_libraries(nebula_seyond_common
 install(TARGETS nebula_seyond_common
         EXPORT export_nebula_seyond_common)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
+install(FILES nebula_seyond_plugin.json DESTINATION share/${PROJECT_NAME})
 
 ament_export_targets(export_nebula_seyond_common)
 ament_export_dependencies(nebula_core_common nebula_core_decoders nlohmann_json)

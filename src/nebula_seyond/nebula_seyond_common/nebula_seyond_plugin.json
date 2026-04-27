@@ -1,0 +1,7 @@
+{
+  "vendor": "seyond",
+  "package": "nebula_seyond_decoders",
+  "library": "libnebula_seyond_decoders_plugin.so",
+  "factory": "create_nebula_sensor_plugin",
+  "models": ["FalconK", "RobinW", "RobinE1X", "HummingbirdD1"]
+}

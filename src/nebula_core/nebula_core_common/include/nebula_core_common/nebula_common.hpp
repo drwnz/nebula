@@ -209,6 +209,10 @@ enum class SensorModel : uint8_t {
   ROBOSENSE_EMX,
   CONTINENTAL_ARS548,
   CONTINENTAL_SRR520,
+  SEYOND_FALCON_K,
+  SEYOND_ROBIN_W,
+  SEYOND_ROBIN_E1X,
+  SEYOND_HUMMINGBIRD_D1,
   SAMPLE
 };
 
@@ -310,6 +314,18 @@ inline std::ostream & operator<<(std::ostream & os, nebula::drivers::SensorModel
       break;
     case SensorModel::CONTINENTAL_SRR520:
       os << "SRR520";
+      break;
+    case SensorModel::SEYOND_FALCON_K:
+      os << "FalconK";
+      break;
+    case SensorModel::SEYOND_ROBIN_W:
+      os << "RobinW";
+      break;
+    case SensorModel::SEYOND_ROBIN_E1X:
+      os << "RobinE1X";
+      break;
+    case SensorModel::SEYOND_HUMMINGBIRD_D1:
+      os << "HummingbirdD1";
       break;
     case SensorModel::SAMPLE:
       os << "Sample";
@@ -453,6 +469,11 @@ inline SensorModel sensor_model_from_string(const std::string & sensor_model)
   // Continental
   if (sensor_model == "ARS548") return SensorModel::CONTINENTAL_ARS548;
   if (sensor_model == "SRR520") return SensorModel::CONTINENTAL_SRR520;
+  // Seyond
+  if (sensor_model == "FalconK") return SensorModel::SEYOND_FALCON_K;
+  if (sensor_model == "RobinW") return SensorModel::SEYOND_ROBIN_W;
+  if (sensor_model == "RobinE1X") return SensorModel::SEYOND_ROBIN_E1X;
+  if (sensor_model == "HummingbirdD1") return SensorModel::SEYOND_HUMMINGBIRD_D1;
   // Sample
   if (sensor_model == "Sample") return SensorModel::SAMPLE;
   return SensorModel::UNKNOWN;
@@ -517,6 +538,15 @@ inline std::string sensor_model_to_string(const SensorModel & sensor_model)
       return "ARS548";
     case SensorModel::CONTINENTAL_SRR520:
       return "SRR520";
+    // Seyond
+    case SensorModel::SEYOND_FALCON_K:
+      return "FalconK";
+    case SensorModel::SEYOND_ROBIN_W:
+      return "RobinW";
+    case SensorModel::SEYOND_ROBIN_E1X:
+      return "RobinE1X";
+    case SensorModel::SEYOND_HUMMINGBIRD_D1:
+      return "HummingbirdD1";
     case SensorModel::SAMPLE:
       return "Sample";
     default:

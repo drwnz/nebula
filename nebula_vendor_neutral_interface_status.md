@@ -33,7 +33,7 @@
 - [x] Velodyne migration
 - [x] Hesai migration
 - [x] Robosense migration
-- [ ] Seyond migration
+- [x] Seyond migration
 - [ ] Continental ARS548 migration
 - [ ] Continental SRR520 migration
 

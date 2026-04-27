@@ -20,7 +20,11 @@ target_link_libraries(
          nebula_seyond_common::nebula_seyond_common
          nebula_core_decoders::nebula_core_decoders)
 
-install(TARGETS nebula_seyond_decoders EXPORT export_nebula_seyond_decoders)
+# Seyond Plugin Library
+add_library(nebula_seyond_decoders_plugin SHARED src/seyond_plugin.cpp)
+target_link_libraries(nebula_seyond_decoders_plugin PUBLIC nebula_seyond_decoders)
+
+install(TARGETS nebula_seyond_decoders nebula_seyond_decoders_plugin EXPORT export_nebula_seyond_decoders)
 install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
 
 ament_export_include_directories("include/${PROJECT_NAME}")
