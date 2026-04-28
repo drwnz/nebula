@@ -25,6 +25,7 @@
 
 #include <nebula_msgs/msg/nebula_packet.hpp>
 #include <nebula_msgs/msg/nebula_packets.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 
 #include <chrono>
 #include <memory>
