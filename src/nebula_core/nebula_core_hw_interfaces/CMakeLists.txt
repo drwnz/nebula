@@ -14,6 +14,8 @@ add_library(nebula_core_hw_interfaces SHARED
   src/pcap_packet_source.cpp
   src/udp_packet_source.cpp
   src/can_packet_source.cpp
+  src/tcp_packet_source.cpp
+  src/http_packet_source.cpp
 )
 
 target_include_directories(
@@ -82,7 +84,13 @@ if(BUILD_TESTING)
       add_test(NAME ${name} COMMAND ${name})
     endif()
     target_link_libraries(${name} ${PROJECT_NAME})
+    target_include_directories(${name} PRIVATE test)
   endfunction()
+
+  nebula_add_test(test_udp test/common/test_udp.cpp)
+  nebula_add_test(test_can test/common/test_can.cpp)
+  nebula_add_test(test_tcp test/common/test_tcp.cpp)
+  nebula_add_test(test_http_client test/common/test_http_client.cpp)
 endif()
 
 if(DEFINED ENV{AMENT_PREFIX_PATH})

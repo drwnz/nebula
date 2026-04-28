@@ -40,6 +40,10 @@ void RobosenseSensorDecoderRuntime::configure(const SensorConfiguration & config
   r_config->max_range = config.max_range;
   r_config->return_mode = config.return_mode;
 
+  // Robosense specific fields
+  r_config->scan_phase = config.extra_params.count("scan_phase") ? std::stod(config.extra_params.at("scan_phase")) : 0.0;
+  r_config->dual_return_distance_threshold = config.extra_params.count("dual_return_distance_threshold") ? std::stod(config.extra_params.at("dual_return_distance_threshold")) : 0.1;
+
   auto c_config = std::make_shared<RobosenseCalibrationConfiguration>();
   if (!config.calibration_file.empty()) {
       c_config->load_from_file(config.calibration_file);

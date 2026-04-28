@@ -19,6 +19,8 @@
 #include <nebula_core_runtime/packet_router.hpp>
 #include <nebula_core_hw_interfaces/udp_packet_source.hpp>
 #include <nebula_core_hw_interfaces/can_packet_source.hpp>
+#include <nebula_core_hw_interfaces/tcp_packet_source.hpp>
+#include <nebula_core_hw_interfaces/http_packet_source.hpp>
 
 #include <memory>
 #include <vector>

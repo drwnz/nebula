@@ -80,6 +80,10 @@ if(BUILD_TESTING)
 
   nebula_add_test(test_angles tests/test_angles.cpp)
   nebula_add_test(test_core_interfaces tests/test_core_interfaces.cpp)
+  nebula_add_test(test_scan_cutter tests/test_scan_cutter.cpp)
+  nebula_add_test(test_downsample_mask tests/point_filters/test_downsample_mask.cpp)
+  target_compile_definitions(test_downsample_mask PRIVATE
+    _TEST_RESOURCES_PATH="${CMAKE_CURRENT_SOURCE_DIR}/test_resources")
 endif()
 
 if(DEFINED ENV{AMENT_PREFIX_PATH})

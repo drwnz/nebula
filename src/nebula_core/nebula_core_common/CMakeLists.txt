@@ -74,6 +74,7 @@ if(BUILD_TESTING)
       add_test(NAME ${name} COMMAND ${name})
     endif()
     target_link_libraries(${name} ${PROJECT_NAME})
+    target_include_directories(${name} PRIVATE test)
   endfunction()
 
   nebula_add_test(test_rate_checker test/test_rate_checker.cpp)

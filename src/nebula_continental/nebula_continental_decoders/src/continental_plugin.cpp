@@ -14,18 +14,11 @@
 
 #include <nebula_continental_decoders/continental_plugin.hpp>
 
-#include <nebula_continental_decoders/decoders/continental_ars548_decoder.hpp>
-#include <nebula_continental_decoders/decoders/continental_srr520_decoder.hpp>
-
-#include <continental_msgs/msg/continental_ars548_detection_list.hpp>
-#include <continental_msgs/msg/continental_srr520_detection_list.hpp>
-#include <nebula_msgs/msg/nebula_packet.hpp>
+// Include the agnostic wrapper, completely hiding ROS message headers from this compilation unit.
+#include "continental_decoder_agnostic.hpp"
 
 #include <iostream>
 #include <cmath>
-
-using namespace nebula::drivers::continental_ars548;
-using namespace nebula::drivers::continental_srr520;
 
 namespace nebula::drivers
 {
@@ -33,7 +26,7 @@ namespace nebula::drivers
 // ARS548 Runtime
 struct ContinentalARS548SensorDecoderRuntime::Impl
 {
-    std::unique_ptr<continental_ars548::ContinentalARS548Decoder> decoder;
+    std::unique_ptr<AgnosticARS548Decoder> decoder;
 };
 
 ContinentalARS548SensorDecoderRuntime::ContinentalARS548SensorDecoderRuntime()
@@ -57,29 +50,11 @@ void ContinentalARS548SensorDecoderRuntime::configure(const SensorConfiguration 
 
   if (config.extra_params.count("multicast_ip")) c_config->multicast_ip = config.extra_params.at("multicast_ip");
 
-  impl_->decoder = std::make_unique<continental_ars548::ContinentalARS548Decoder>(c_config);
+  impl_->decoder = std::make_unique<AgnosticARS548Decoder>(c_config);
   
-  auto on_det = [this](std::unique_ptr<continental_msgs::msg::ContinentalArs548DetectionList> msg) {
+  impl_->decoder->set_detection_callback([this](std::shared_ptr<RadarDetectionList> list) {
       progress_.output_count++;
       if (output_callback_) {
-        auto list = std::make_shared<RadarDetectionList>();
-        list->timestamp_ns = static_cast<uint64_t>(msg->header.stamp.sec) * 1e9 + msg->header.stamp.nanosec;
-        list->frame_id = msg->header.frame_id;
-        for (const auto & d : msg->detections) {
-            RadarDetection det;
-            det.range = d.range;
-            det.azimuth = d.azimuth_angle;
-            det.elevation = d.elevation_angle;
-            det.x = d.range * std::cos(d.elevation_angle) * std::cos(d.azimuth_angle);
-            det.y = d.range * std::cos(d.elevation_angle) * std::sin(d.azimuth_angle);
-            det.z = d.range * std::sin(d.elevation_angle);
-            det.range_rate = d.range_rate;
-            det.rcs = d.rcs;
-            det.id = d.measurement_id;
-            det.classification = d.classification;
-            list->detections.push_back(det);
-        }
-        
         SensorDecodedOutput output;
         output.kind = SensorOutputKind::RadarDetections;
         output.timestamp_ns = list->timestamp_ns;
@@ -87,9 +62,7 @@ void ContinentalARS548SensorDecoderRuntime::configure(const SensorConfiguration 
         output.payload = list;
         output_callback_(output);
       }
-  };
-
-  impl_->decoder->register_detection_list_callback(on_det);
+  });
 }
 
 SensorPacketResult ContinentalARS548SensorDecoderRuntime::process_packet(const SensorPacket & packet)
@@ -97,12 +70,7 @@ SensorPacketResult ContinentalARS548SensorDecoderRuntime::process_packet(const S
   if (!impl_->decoder) return SensorPacketResult::Error;
   progress_.processed_packets++;
   
-  auto packet_msg = std::make_unique<nebula_msgs::msg::NebulaPacket>();
-  packet_msg->data = packet.payload;
-  packet_msg->stamp.sec = packet.timestamp_ns / 1000000000ULL;
-  packet_msg->stamp.nanosec = packet.timestamp_ns % 1000000000ULL;
-  
-  if (impl_->decoder->process_packet(std::move(packet_msg))) {
+  if (impl_->decoder->process_packet(packet.payload, packet.timestamp_ns)) {
     progress_.matched_packets++;
     progress_.decoded_packets++;
     if (progress_callback_) progress_callback_(progress_);
@@ -116,7 +84,7 @@ SensorPacketResult ContinentalARS548SensorDecoderRuntime::process_packet(const S
 // SRR520 Runtime
 struct ContinentalSRR520SensorDecoderRuntime::Impl
 {
-    std::unique_ptr<continental_srr520::ContinentalSRR520Decoder> decoder;
+    std::unique_ptr<AgnosticSRR520Decoder> decoder;
 };
 
 ContinentalSRR520SensorDecoderRuntime::ContinentalSRR520SensorDecoderRuntime()
@@ -133,29 +101,11 @@ void ContinentalSRR520SensorDecoderRuntime::configure(const SensorConfiguration 
   s_config->frame_id = config.frame_id;
   s_config->base_frame = config.extra_params.count("base_frame") ? config.extra_params.at("base_frame") : "base_link";
 
-  impl_->decoder = std::make_unique<continental_srr520::ContinentalSRR520Decoder>(s_config);
+  impl_->decoder = std::make_unique<AgnosticSRR520Decoder>(s_config);
   
-  auto on_det = [this](std::unique_ptr<continental_msgs::msg::ContinentalSrr520DetectionList> msg) {
+  impl_->decoder->set_detection_callback([this](std::shared_ptr<RadarDetectionList> list) {
       progress_.output_count++;
       if (output_callback_) {
-        auto list = std::make_shared<RadarDetectionList>();
-        list->timestamp_ns = static_cast<uint64_t>(msg->header.stamp.sec) * 1e9 + msg->header.stamp.nanosec;
-        list->frame_id = msg->header.frame_id;
-        for (const auto & d : msg->detections) {
-            RadarDetection det;
-            det.range = d.range;
-            det.azimuth = d.azimuth_angle;
-            det.elevation = 0.0f;
-            det.x = d.range * std::cos(d.azimuth_angle);
-            det.y = d.range * std::sin(d.azimuth_angle);
-            det.z = 0.0f;
-            det.range_rate = d.range_rate;
-            det.rcs = d.rcs;
-            det.id = 0;
-            det.classification = 0;
-            list->detections.push_back(det);
-        }
-
         SensorDecodedOutput output;
         output.kind = SensorOutputKind::RadarDetections;
         output.timestamp_ns = list->timestamp_ns;
@@ -163,10 +113,7 @@ void ContinentalSRR520SensorDecoderRuntime::configure(const SensorConfiguration 
         output.payload = list;
         output_callback_(output);
       }
-  };
-
-  impl_->decoder->register_near_detection_list_callback(on_det);
-  impl_->decoder->register_hrr_detection_list_callback(on_det);
+  });
 }
 
 SensorPacketResult ContinentalSRR520SensorDecoderRuntime::process_packet(const SensorPacket & packet)
@@ -174,12 +121,7 @@ SensorPacketResult ContinentalSRR520SensorDecoderRuntime::process_packet(const S
   if (!impl_->decoder) return SensorPacketResult::Error;
   progress_.processed_packets++;
   
-  auto packet_msg = std::make_unique<nebula_msgs::msg::NebulaPacket>();
-  packet_msg->data = packet.payload;
-  packet_msg->stamp.sec = packet.timestamp_ns / 1000000000ULL;
-  packet_msg->stamp.nanosec = packet.timestamp_ns % 1000000000ULL;
-
-  if (impl_->decoder->process_packet(std::move(packet_msg))) {
+  if (impl_->decoder->process_packet(packet.payload, packet.timestamp_ns)) {
       progress_.matched_packets++;
       progress_.decoded_packets++;
       if (progress_callback_) progress_callback_(progress_);

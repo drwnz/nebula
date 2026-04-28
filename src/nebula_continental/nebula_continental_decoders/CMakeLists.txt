@@ -33,15 +33,13 @@ ament_target_dependencies(nebula_continental_decoders PUBLIC continental_msgs
                           diagnostic_msgs nebula_msgs)
 
 # Continental Plugin Library
-add_library(nebula_continental_decoders_plugin SHARED src/continental_plugin.cpp)
+add_library(nebula_continental_decoders_plugin SHARED src/continental_plugin.cpp src/continental_decoder_agnostic.cpp)
 target_include_directories(nebula_continental_decoders_plugin PRIVATE include)
 target_link_libraries(nebula_continental_decoders_plugin PUBLIC nebula_continental_decoders)
 ament_target_dependencies(nebula_continental_decoders_plugin PUBLIC
   nebula_core_common
   nebula_core_decoders
   nebula_continental_common
-  continental_msgs
-  nebula_msgs
 )
 
 install(TARGETS nebula_continental_decoders nebula_continental_decoders_plugin EXPORT export_nebula_continental_decoders)
