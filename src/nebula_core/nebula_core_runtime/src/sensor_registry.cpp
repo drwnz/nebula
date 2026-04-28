@@ -67,21 +67,25 @@ void SensorRegistry::load_registry(const std::vector<std::string> & search_paths
       }
   }
 
-  // 3. Auto-discover from COLCON_PREFIX_PATH
-  char* colcon_env = std::getenv("COLCON_PREFIX_PATH");
-  if (colcon_env) {
-      std::vector<std::string> prefixes;
-      boost::split(prefixes, colcon_env, boost::is_any_of(":"));
-      for (const auto & prefix : prefixes) {
-          fs::path share_path = fs::path(prefix) / "share";
-          if (fs::exists(share_path) && fs::is_directory(share_path)) {
-              for (fs::directory_iterator it(share_path); it != fs::directory_iterator(); ++it) {
-                  if (fs::is_directory(it->status())) {
-                      for (fs::directory_iterator pkg_it(it->path()); pkg_it != fs::directory_iterator(); ++pkg_it) {
-                          if (fs::is_regular_file(pkg_it->status()) && 
-                              (pkg_it->path().extension() == ".json") &&
-                              (pkg_it->path().filename().string().find("plugin") != std::string::npos)) {
-                              descriptor_files.push_back(pkg_it->path().string());
+  // 3. Auto-discover from AMENT_PREFIX_PATH and COLCON_PREFIX_PATH
+  std::vector<std::string> prefix_envs = {"AMENT_PREFIX_PATH", "COLCON_PREFIX_PATH"};
+  for (const auto & env_name : prefix_envs) {
+      char* env_val = std::getenv(env_name.c_str());
+      if (env_val) {
+          std::vector<std::string> prefixes;
+          boost::split(prefixes, env_val, boost::is_any_of(":"));
+          for (const auto & prefix : prefixes) {
+              if (prefix.empty()) continue;
+              fs::path share_path = fs::path(prefix) / "share";
+              if (fs::exists(share_path) && fs::is_directory(share_path)) {
+                  for (fs::directory_iterator it(share_path); it != fs::directory_iterator(); ++it) {
+                      if (fs::is_directory(it->status())) {
+                          for (fs::directory_iterator pkg_it(it->path()); pkg_it != fs::directory_iterator(); ++pkg_it) {
+                              if (fs::is_regular_file(pkg_it->status()) && 
+                                  (pkg_it->path().extension() == ".json") &&
+                                  (pkg_it->path().filename().string().find("plugin") != std::string::npos)) {
+                                  descriptor_files.push_back(pkg_it->path().string());
+                              }
                           }
                       }
                   }
@@ -184,23 +188,28 @@ void * SensorRegistry::load_library(const std::string & library_path, const std:
   void * handle = dlopen(library_path.c_str(), RTLD_LAZY | RTLD_GLOBAL);
   
   if (!handle && fs::path(library_path).is_relative()) {
-      char* colcon_env = std::getenv("COLCON_PREFIX_PATH");
-      if (colcon_env) {
-          std::vector<std::string> prefixes;
-          boost::split(prefixes, colcon_env, boost::is_any_of(":"));
-          for (const auto & prefix : prefixes) {
-              // Try common prefix lib
-              fs::path p1 = fs::path(prefix) / "lib" / library_path;
-              if (fs::exists(p1)) {
-                  handle = dlopen(p1.c_str(), RTLD_LAZY | RTLD_GLOBAL);
-                  if (handle) break;
+      std::vector<std::string> prefix_envs = {"AMENT_PREFIX_PATH", "COLCON_PREFIX_PATH"};
+      for (const auto & env_name : prefix_envs) {
+          char* env_val = std::getenv(env_name.c_str());
+          if (env_val) {
+              std::vector<std::string> prefixes;
+              boost::split(prefixes, env_val, boost::is_any_of(":"));
+              for (const auto & prefix : prefixes) {
+                  if (prefix.empty()) continue;
+                  // Try common prefix lib
+                  fs::path p1 = fs::path(prefix) / "lib" / library_path;
+                  if (fs::exists(p1)) {
+                      handle = dlopen(p1.c_str(), RTLD_LAZY | RTLD_GLOBAL);
+                      if (handle) break;
+                  }
+                  // Try package-specific lib (isolated layouts)
+                  fs::path p2 = fs::path(prefix) / package_name / "lib" / library_path;
+                  if (!package_name.empty() && fs::exists(p2)) {
+                      handle = dlopen(p2.c_str(), RTLD_LAZY | RTLD_GLOBAL);
+                      if (handle) break;
+                  }
               }
-              // Try package-specific lib (isolated layouts)
-              fs::path p2 = fs::path(prefix) / package_name / "lib" / library_path;
-              if (!package_name.empty() && fs::exists(p2)) {
-                  handle = dlopen(p2.c_str(), RTLD_LAZY | RTLD_GLOBAL);
-                  if (handle) break;
-              }
+              if (handle) break;
           }
       }
   }

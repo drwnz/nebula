@@ -127,6 +127,11 @@ void PcapPacketSource::run()
             uint16_t dst_port = ntohs(udp_hdr->uh_dport);
             uint16_t udp_len = ntohs(udp_hdr->uh_ulen);
 
+            if (udp_len < sizeof(struct udphdr)) {
+                std::cerr << "Warning: UDP length (" << udp_len << ") smaller than header size, skipping." << std::endl;
+                continue;
+            }
+
             if (!more_frags) {
                 // Not fragmented
                 if (callback_) {

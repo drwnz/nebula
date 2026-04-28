@@ -16,6 +16,7 @@
 
 #include <gtest/gtest.h>
 #include <boost/filesystem.hpp>
+#include <boost/algorithm/string.hpp>
 #include <fstream>
 
 namespace nebula::drivers::test
@@ -31,26 +32,28 @@ protected:
     // But during build/test it might be in different places. 
     // For simplicity, we assume we can find it relative to the current working directory if run from nebula/
     
-    char* workspace_path = std::getenv("COLCON_PREFIX_PATH");
-    if (workspace_path) {
-        std::string paths = workspace_path;
-        // Search in all colcon prefix paths
-        size_t start = 0;
-        size_t end = paths.find(':');
-        while (end != std::string::npos) {
-            fs::path p = fs::path(paths.substr(start, end - start)) / "nebula_sample_decoders" / "lib" / "libnebula_sample_decoders_plugin.so";
-            if (fs::exists(p)) {
-                plugin_library_path_ = p.string();
-                break;
+    std::vector<std::string> prefix_envs = {"AMENT_PREFIX_PATH", "COLCON_PREFIX_PATH"};
+    for (const auto & env_name : prefix_envs) {
+        char* env_val = std::getenv(env_name.c_str());
+        if (env_val) {
+            std::vector<std::string> prefixes;
+            boost::split(prefixes, env_val, boost::is_any_of(":"));
+            for (const auto & prefix : prefixes) {
+                if (prefix.empty()) continue;
+                // Try common lib
+                fs::path p1 = fs::path(prefix) / "lib" / "libnebula_sample_decoders_plugin.so";
+                if (fs::exists(p1)) {
+                    plugin_library_path_ = p1.string();
+                    break;
+                }
+                // Try isolated lib
+                fs::path p2 = fs::path(prefix) / "nebula_sample_decoders" / "lib" / "libnebula_sample_decoders_plugin.so";
+                if (fs::exists(p2)) {
+                    plugin_library_path_ = p2.string();
+                    break;
+                }
             }
-            start = end + 1;
-            end = paths.find(':', start);
-        }
-        if (plugin_library_path_.empty()) {
-             fs::path p = fs::path(paths.substr(start)) / "nebula_sample_decoders" / "lib" / "libnebula_sample_decoders_plugin.so";
-             if (fs::exists(p)) {
-                 plugin_library_path_ = p.string();
-             }
+            if (!plugin_library_path_.empty()) break;
         }
     }
 
