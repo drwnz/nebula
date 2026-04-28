@@ -9,6 +9,7 @@ pkg_check_modules(PCAP REQUIRED libpcap)
 add_library(nebula_core_hw_interfaces SHARED 
   src/pcap_packet_source.cpp
   src/udp_packet_source.cpp
+  src/can_packet_source.cpp
 )
 
 target_include_directories(

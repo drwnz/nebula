@@ -20,13 +20,13 @@
 ## Phase 4: Generic Packet Sources and Router
 - [x] Implement `UdpPacketSource`
 - [x] Implement `PcapPacketSource`
-- [ ] Implement `CanPacketSource`
+- [x] Implement `CanPacketSource`
 - [x] Implement Packet Router
 - [x] Add unit tests for packet sources and router
 
 ## Phase 5: Runtime Sessions
 - [x] Implement `ReplaySessionRunner`
-- [ ] Implement `LiveTransportGraph`
+- [ ] Implement `LiveTransportGraph` (In Progress: defining session graph architecture)
 - [x] Add integration tests for sessions
 
 ## Phase 6: Vendor Adapter Migration
