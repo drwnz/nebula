@@ -26,7 +26,7 @@
 
 ## Phase 5: Runtime Sessions
 - [x] Implement `ReplaySessionRunner`
-- [ ] Implement `LiveTransportGraph` (In Progress: defining session graph architecture)
+- [x] Implement `LiveTransportGraph`
 - [x] Add integration tests for sessions
 
 ## Phase 6: Vendor Adapter Migration

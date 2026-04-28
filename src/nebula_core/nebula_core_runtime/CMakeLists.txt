@@ -13,6 +13,7 @@ add_library(nebula_core_runtime SHARED
   src/sensor_registry.cpp
   src/packet_router.cpp
   src/replay_session_runner.cpp
+  src/live_transport_graph.cpp
 )
 
 target_include_directories(
