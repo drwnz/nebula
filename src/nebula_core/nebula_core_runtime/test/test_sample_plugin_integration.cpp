@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
+#include <dlfcn.h>
 #include <fstream>
 
 namespace nebula::drivers::test
@@ -58,8 +59,13 @@ protected:
     }
 
     if (plugin_library_path_.empty()) {
-        // Fallback to a common location
-        plugin_library_path_ = "install/nebula_sample_decoders/lib/libnebula_sample_decoders_plugin.so";
+        fs::path install_prefix(NEBULA_TEST_INSTALL_PREFIX);
+        fs::path isolated = install_prefix.parent_path() / "nebula_sample_decoders" / "lib" / "libnebula_sample_decoders_plugin.so";
+        if (fs::exists(isolated)) {
+            plugin_library_path_ = isolated.string();
+        } else {
+            plugin_library_path_ = "install/nebula_sample_decoders/lib/libnebula_sample_decoders_plugin.so";
+        }
     }
   }
 
@@ -72,12 +78,19 @@ TEST_F(TestSamplePluginIntegration, LoadAndRunSamplePlugin)
     GTEST_SKIP() << "Sample plugin library not found at " << plugin_library_path_;
   }
 
+  fs::path dependency_path = fs::path(plugin_library_path_).parent_path() / "libnebula_sample_decoders.so";
+  if (fs::exists(dependency_path)) {
+    void * dependency = dlopen(dependency_path.string().c_str(), RTLD_LAZY | RTLD_GLOBAL);
+    ASSERT_NE(dependency, nullptr) << dlerror();
+  }
+
   SensorRegistry registry;
   
   SensorPluginMetadata metadata;
   metadata.vendor = "nebula";
   metadata.package_name = "nebula_sample_decoders";
   metadata.library_path = plugin_library_path_;
+  metadata.factory_symbol = "create_nebula_sensor_plugin";
   metadata.supported_models = {SensorModel::SAMPLE};
 
   auto plugin = registry.load_plugin(metadata);

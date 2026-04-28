@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
+#include <dlfcn.h>
 #include <fstream>
 
 namespace nebula::drivers::test
@@ -55,6 +56,14 @@ protected:
             if (!plugin_library_path_.empty()) break;
         }
     }
+
+    if (plugin_library_path_.empty()) {
+        fs::path install_prefix(NEBULA_TEST_INSTALL_PREFIX);
+        fs::path isolated = install_prefix.parent_path() / "nebula_sample_decoders" / "lib" / "libnebula_sample_decoders_plugin.so";
+        if (fs::exists(isolated)) {
+            plugin_library_path_ = isolated.string();
+        }
+    }
   }
 
   void TearDown() override
@@ -70,6 +79,12 @@ TEST_F(TestReplaySessionRunner, ReplaySampleSensor)
 {
   if (plugin_library_path_.empty() || !fs::exists(plugin_library_path_)) {
     GTEST_SKIP() << "Sample plugin library not found";
+  }
+
+  fs::path dependency_path = fs::path(plugin_library_path_).parent_path() / "libnebula_sample_decoders.so";
+  if (fs::exists(dependency_path)) {
+    void * dependency = dlopen(dependency_path.string().c_str(), RTLD_LAZY | RTLD_GLOBAL);
+    ASSERT_NE(dependency, nullptr) << dlerror();
   }
 
   // Create a dummy descriptor

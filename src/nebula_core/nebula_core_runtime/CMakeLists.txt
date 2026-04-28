@@ -88,6 +88,8 @@ if(BUILD_TESTING)
       add_test(NAME ${name} COMMAND ${name})
     endif()
     target_link_libraries(${name} ${PROJECT_NAME} Boost::filesystem Boost::system)
+    target_compile_definitions(${name} PRIVATE
+      NEBULA_TEST_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}")
   endfunction()
 
   nebula_add_test(test_sensor_registry test/test_sensor_registry.cpp)
