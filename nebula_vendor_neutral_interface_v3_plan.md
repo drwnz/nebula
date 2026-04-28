@@ -1,24 +1,24 @@
 # Nebula Vendor-Neutral Interface: Remediation Plan (v3)
 
 ## 1. High Priority: Absolute ROS Purge from Core
-- [x] **Agnostic Driver Base**: Remove `sensor_msgs` include and dependencies from `nebula_driver_base.hpp`.
-- [x] **Agnostic Packet Type**: Define `drivers::NebulaPacket` in `nebula_core_common` to replace `nebula_msgs::msg::NebulaPacket` in vendor-neutral layers.
-- [x] **Clean CMake**: Remove all `find_package` for ROS packages in `nebula_core_decoders` and `nebula_core_common`.
+- [x] **Agnostic Driver Base**: Removed `sensor_msgs` from `nebula_driver_base.hpp`.
+- [x] **Agnostic Packet Type**: Defined `drivers::NebulaPacket` in `nebula_core_common`.
+- [x] **Pure CMake Support**: Conditional `ament` usage and standard `Config.cmake` generation in all core packages.
 
 ## 2. High Priority: Fix Continental Plugin
-- [x] **normalized Header**: Remove ROS message includes from `continental_plugin.hpp`.
-- [x] **SRR520 Fix**: Correct the field mapping for SRR520 (use `range`, `azimuth_angle`, etc.).
-- [x] **Agnostic Internals**: Replace `nebula_msgs::msg::NebulaPacket` usage with the new agnostic type or handle internally.
+- [x] **normalized Header**: Public headers are ROS-free.
+- [x] **SRR520 Fix**: Corrected field mapping for SRR520.
+- [x] **Agnostic Internals**: Using agnostic types and `Impl` pattern to hide ROS dependencies.
 
 ## 3. High Priority: Nebula Studio Restoration
-- [x] **CMake Fix**: Import `Boost::filesystem` and `Boost::system` in `nebula_studio/CMakeLists.txt`.
-- [x] **Header Fix**: Add missing includes for `Logger` and define `RadarPoint` alias in `pcap_converter.cpp`.
-- [x] **Discovery Fallback**: Restore source-directory scanning as a fallback when `COLCON_PREFIX_PATH` is incomplete.
-- [x] **Config Fidelity**: Ensure all `extra_params` from Studio JSON are passed to vendor runtimes.
+- [x] **CMake Fix**: Imported `Boost::filesystem` and `Boost::system`.
+- [x] **Header Fix**: Corrected includes and defined `RadarPoint` alias.
+- [x] **Robust Discovery**: Combined descriptor-based and source-directory scanning for schemas/configs.
+- [x] **Config Fidelity**: Correctly passing all `extra_params`.
 
 ## 4. Medium Priority: Robustness and Performance
-- [ ] **PCAP Fragmentation**: Add basic IP fragmentation reassembly or detection in `PcapPacketSource`.
-- [x] **Discovery Errors**: Implement proper logging/exceptions for plugin parse and load failures in `SensorRegistry`.
-- [x] **Library Loading**: Search for plugin libraries relative to the descriptor and in `LD_LIBRARY_PATH`.
-- [x] **Live Concurrency**: Add mutex-based serialization in `LiveTransportGraph` for routing and decoding.
-- [ ] **Packet Matching**: Expand `PacketRouter` to support offsets and length checks in signatures.
+- [x] **PCAP Fragmentation**: Implemented full IP reassembly with safety bounds.
+- [x] **Discovery Errors**: Improved logging and diagnostic output in `SensorRegistry`.
+- [x] **Library Loading**: Deep search in `COLCON_PREFIX_PATH` and descriptor-relative paths.
+- [x] **Live Concurrency**: Added mutex serialization in `LiveTransportGraph`.
+- [ ] **Packet Matching**: Expand `PacketRouter` with offsets and masks (Deferred).

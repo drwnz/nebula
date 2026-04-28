@@ -22,6 +22,7 @@
 #include <atomic>
 #include <map>
 #include <vector>
+#include <algorithm>
 
 namespace nebula::drivers
 {

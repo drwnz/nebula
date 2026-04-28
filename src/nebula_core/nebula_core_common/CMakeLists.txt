@@ -19,14 +19,64 @@ target_link_libraries(nebula_core_common PUBLIC
   nlohmann_json::nlohmann_json
   Boost::headers)
 
-# Standard CMake install
+# Standard CMake install and config generation
+include(CMakePackageConfigHelpers)
+set(CPACK_PACKAGE_VERSION "1.0.0")
+
 install(TARGETS nebula_core_common 
-        EXPORT ${PROJECT_NAME}Targets
+        EXPORT export_${PROJECT_NAME}
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
 
 install(DIRECTORY include/ DESTINATION include)
+
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+  VERSION ${CPACK_PACKAGE_VERSION}
+  COMPATIBILITY AnyNewerVersion
+)
+
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/${PROJECT_NAME}Config.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+  INSTALL_DESTINATION lib/cmake/${PROJECT_NAME}
+)
+
+install(EXPORT export_${PROJECT_NAME}
+  FILE ${PROJECT_NAME}Targets.cmake
+  NAMESPACE ${PROJECT_NAME}::
+  DESTINATION lib/cmake/${PROJECT_NAME}
+)
+
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+  DESTINATION lib/cmake/${PROJECT_NAME}
+)
+
+if(BUILD_TESTING)
+  if(DEFINED ENV{AMENT_PREFIX_PATH})
+    find_package(ament_lint_auto REQUIRED)
+    find_package(ament_cmake_gtest REQUIRED)
+    ament_lint_auto_find_test_dependencies()
+  else()
+    find_package(GTest REQUIRED)
+  endif()
+
+  function(nebula_add_test name)
+    if(DEFINED ENV{AMENT_PREFIX_PATH})
+      ament_add_gtest(${name} ${ARGN})
+    else()
+      add_executable(${name} ${ARGN})
+      target_link_libraries(${name} GTest::gtest_main)
+      add_test(NAME ${name} COMMAND ${name})
+    endif()
+    target_link_libraries(${name} ${PROJECT_NAME})
+  endfunction()
+
+  nebula_add_test(test_core_types test/test_core_types.cpp)
+endif()
 
 # ament-specific exports if building with ament
 if(DEFINED ENV{AMENT_PREFIX_PATH})

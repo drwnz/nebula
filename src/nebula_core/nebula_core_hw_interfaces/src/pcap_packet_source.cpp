@@ -135,7 +135,7 @@ void PcapPacketSource::run()
                     sp.timestamp_ns = static_cast<uint64_t>(header->ts.tv_sec) * 1e9 + header->ts.tv_usec * 1e3;
                     sp.source = {src_ip_str, src_port};
                     sp.destination = {dst_ip_str, dst_port};
-                    sp.payload.assign(ip_payload + sizeof(struct udphdr), ip_payload + udp_len);
+                    sp.payload.assign(ip_payload + sizeof(struct udphdr), ip_payload + std::min((size_t)udp_len, ip_payload_len));
                     callback_(sp);
                 }
             } else {
@@ -151,14 +151,21 @@ void PcapPacketSource::run()
                 ass.received.resize(ass.total_size, false);
                 
                 size_t frag_data_len = ip_payload_len - sizeof(struct udphdr);
-                std::copy(ip_payload + sizeof(struct udphdr), ip_payload + ip_payload_len, ass.data.begin());
+                if (frag_data_len > ass.total_size) frag_data_len = ass.total_size;
+                std::copy(ip_payload + sizeof(struct udphdr), ip_payload + sizeof(struct udphdr) + frag_data_len, ass.data.begin());
                 std::fill(ass.received.begin(), ass.received.begin() + frag_data_len, true);
             }
         } else {
             // Subsequent fragment
             if (assemblies_.count(key)) {
                 auto & ass = assemblies_[key];
+                if (frag_offset < sizeof(struct udphdr)) {
+                    continue;
+                }
                 size_t udp_data_offset = frag_offset - sizeof(struct udphdr);
+                if (udp_data_offset + ip_payload_len > ass.data.size()) {
+                    ip_payload_len = ass.data.size() - udp_data_offset;
+                }
                 std::copy(ip_payload, ip_payload + ip_payload_len, ass.data.begin() + udp_data_offset);
                 std::fill(ass.received.begin() + udp_data_offset, ass.received.begin() + udp_data_offset + ip_payload_len, true);
                 if (!more_frags) ass.saw_last = true;
