@@ -76,15 +76,30 @@ void SensorRegistry::load_registry(const std::vector<std::string> & search_paths
           boost::split(prefixes, env_val, boost::is_any_of(":"));
           for (const auto & prefix : prefixes) {
               if (prefix.empty()) continue;
-              fs::path share_path = fs::path(prefix) / "share";
-              if (fs::exists(share_path) && fs::is_directory(share_path)) {
-                  for (fs::directory_iterator it(share_path); it != fs::directory_iterator(); ++it) {
+              
+              std::vector<fs::path> share_paths;
+              // Add <prefix>/share (merged install or ament prefix)
+              share_paths.push_back(fs::path(prefix) / "share");
+              
+              // Add <prefix>/*/share (isolated colcon install)
+              if (fs::exists(prefix) && fs::is_directory(prefix)) {
+                  for (fs::directory_iterator it(prefix); it != fs::directory_iterator(); ++it) {
                       if (fs::is_directory(it->status())) {
-                          for (fs::directory_iterator pkg_it(it->path()); pkg_it != fs::directory_iterator(); ++pkg_it) {
-                              if (fs::is_regular_file(pkg_it->status()) && 
-                                  (pkg_it->path().extension() == ".json") &&
-                                  (pkg_it->path().filename().string().find("plugin") != std::string::npos)) {
-                                  descriptor_files.push_back(pkg_it->path().string());
+                          share_paths.push_back(it->path() / "share");
+                      }
+                  }
+              }
+
+              for (const auto & share_path : share_paths) {
+                  if (fs::exists(share_path) && fs::is_directory(share_path)) {
+                      for (fs::directory_iterator it(share_path); it != fs::directory_iterator(); ++it) {
+                          if (fs::is_directory(it->status())) {
+                              for (fs::directory_iterator pkg_it(it->path()); pkg_it != fs::directory_iterator(); ++pkg_it) {
+                                  if (fs::is_regular_file(pkg_it->status()) && 
+                                      (pkg_it->path().extension() == ".json") &&
+                                      (pkg_it->path().filename().string().find("plugin") != std::string::npos)) {
+                                      descriptor_files.push_back(pkg_it->path().string());
+                                  }
                               }
                           }
                       }
@@ -113,19 +128,50 @@ void SensorRegistry::load_registry(const std::vector<std::string> & search_paths
         metadata.supported_models.push_back(sensor_model_from_string(m.get<std::string>()));
       }
 
-      if (fs::path(metadata.library_path).is_relative()) {
-          // Try relative to the descriptor file's directory
-          fs::path rel_to_desc = fs::path(file_path).parent_path() / metadata.library_path;
-          if (fs::exists(rel_to_desc)) {
-              metadata.library_path = rel_to_desc.string();
-          } else {
-              // Try in ../../lib/ relative to share/package/
-              fs::path rel_to_lib = fs::path(file_path).parent_path().parent_path().parent_path() / "lib" / metadata.library_path;
-              if (fs::exists(rel_to_lib)) {
-                  metadata.library_path = rel_to_lib.string();
+          if (fs::path(metadata.library_path).is_relative()) {
+              bool found = false;
+              // 1. Try relative to the descriptor file's directory
+              fs::path rel_to_desc = fs::path(file_path).parent_path() / metadata.library_path;
+              if (fs::exists(rel_to_desc)) {
+                  metadata.library_path = rel_to_desc.string();
+                  found = true;
+              }
+              // 2. Try in the install prefix of the *target* package (metadata.package_name)
+              if (!found) {
+                  // The descriptor is usually in <prefix>/<common_pkg>/share/<common_pkg>/...
+                  // Or <prefix>/share/<common_pkg>/...
+                  // We need to find <prefix>/<metadata.package_name>/lib/...
+                  // We can search the known prefix environments
+                  std::vector<std::string> prefix_envs = {"AMENT_PREFIX_PATH", "COLCON_PREFIX_PATH"};
+                  for (const auto & env_name : prefix_envs) {
+                      char* env_val = std::getenv(env_name.c_str());
+                      if (env_val) {
+                          std::vector<std::string> prefixes;
+                          boost::split(prefixes, env_val, boost::is_any_of(":"));
+                          for (const auto & prefix : prefixes) {
+                              if (prefix.empty()) continue;
+                              
+                              // Try common lib directory
+                              fs::path p1 = fs::path(prefix) / "lib" / metadata.library_path;
+                              if (fs::exists(p1)) {
+                                  metadata.library_path = p1.string();
+                                  found = true;
+                                  break;
+                              }
+                              
+                              // Try isolated package lib directory
+                              fs::path p2 = fs::path(prefix) / metadata.package_name / "lib" / metadata.library_path;
+                              if (!metadata.package_name.empty() && fs::exists(p2)) {
+                                  metadata.library_path = p2.string();
+                                  found = true;
+                                  break;
+                              }
+                          }
+                          if (found) break;
+                      }
+                  }
               }
           }
-      }
 
       registered_plugins_[metadata.package_name] = metadata;
     } catch (const std::exception & e) {

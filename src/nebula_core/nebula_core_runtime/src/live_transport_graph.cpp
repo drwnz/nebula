@@ -68,14 +68,14 @@ void LiveTransportGraph::configure(const LiveSessionConfig & config)
           sources_.push_back(std::move(source));
       } else if (req.transport == SensorTransportKind::TCP && req.port.has_value()) {
           auto source = std::make_unique<TcpPacketSource>();
-          source->configure(config.sensor_config.host_ip, *req.port);
+          source->configure(config.sensor_config.sensor_ip, *req.port);
           source->set_packet_callback(std::bind(&LiveTransportGraph::on_packet, this, std::placeholders::_1));
           sources_.push_back(std::move(source));
       } else if (req.transport == SensorTransportKind::HTTP && req.port.has_value()) {
           auto source = std::make_unique<HttpPacketSource>();
           std::string path = "/";
           if (req.http_path.has_value()) path = *req.http_path;
-          source->configure(config.sensor_config.host_ip, *req.port, path);
+          source->configure(config.sensor_config.sensor_ip, *req.port, path);
           source->set_packet_callback(std::bind(&LiveTransportGraph::on_packet, this, std::placeholders::_1));
           sources_.push_back(std::move(source));
       }
