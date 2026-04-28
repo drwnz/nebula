@@ -4,5 +4,5 @@
   "library": "libnebula_sample_decoders_plugin.so",
   "factory": "create_nebula_sensor_plugin",
   "models": ["Sample"],
-  "schema": "share/nebula_sample_common/schemas/sample.schema.json"
+  "schema": "schemas/sample.schema.json"
 }

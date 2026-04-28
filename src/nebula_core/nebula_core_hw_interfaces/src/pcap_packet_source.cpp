@@ -97,7 +97,14 @@ void PcapPacketSource::run()
 
     struct ip * ip_hdr = (struct ip *)(pkt_data + eth_hdr_len);
     size_t ip_hdr_len = ip_hdr->ip_hl * 4;
+    if (ip_hdr_len < sizeof(struct ip)) continue;
     if (header->caplen < eth_hdr_len + ip_hdr_len) continue;
+
+    const size_t ip_total_len = ntohs(ip_hdr->ip_len);
+    if (ip_total_len < ip_hdr_len) {
+        std::cerr << "Warning: IP total length smaller than header size, skipping." << std::endl;
+        continue;
+    }
 
     uint16_t ip_off = ntohs(ip_hdr->ip_off);
     uint16_t frag_offset = (ip_off & IP_OFFMASK) * 8;
@@ -110,7 +117,7 @@ void PcapPacketSource::run()
 
     if (ip_hdr->ip_p == IPPROTO_UDP) {
         const u_char * ip_payload = pkt_data + eth_hdr_len + ip_hdr_len;
-        size_t ip_payload_len = ntohs(ip_hdr->ip_len) - ip_hdr_len;
+        size_t ip_payload_len = ip_total_len - ip_hdr_len;
         
         // Truncated packet check
         if (eth_hdr_len + ip_hdr_len + ip_payload_len > header->caplen) {
