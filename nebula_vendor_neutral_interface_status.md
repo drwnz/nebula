@@ -17,14 +17,15 @@
 - [x] Update `nebula_sample_common` with registry descriptor and schemas
 - [x] Update `nebula_sample_decoders` to implement `SensorPlugin` and `SensorDecoderRuntime`
 - [x] **Faithful Configuration**: Correct mapping of expanded `SensorConfiguration`.
-- [x] Add integration tests for sample sensor
+- [x] Add integration tests for sample sensor (**Verified in isolated install paths**)
 
 ## Phase 4: Generic Packet Sources and Router
 - [x] Implement `UdpPacketSource`
-- [x] Implement `PcapPacketSource` (**Enhanced**: Robust reassembly, VLANs, fragmentation reassembly with safety bounds)
+- [x] Implement `PcapPacketSource` (**Enhanced**: Robust reassembly, VLANs, fragmentation reassembly with strict IPv4 length and buffer safety bounds)
 - [x] Implement `CanPacketSource`
 - [x] Implement Packet Router (Payload signature matching)
 - [x] Add unit tests for packet sources and router
+
 
 ## Phase 5: Runtime Sessions
 - [x] Implement `ReplaySessionRunner` (Synchronous and asynchronous support)
