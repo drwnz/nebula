@@ -62,6 +62,7 @@ if(BUILD_TESTING)
     ament_lint_auto_find_test_dependencies()
   else()
     find_package(GTest REQUIRED)
+    enable_testing()
   endif()
 
   function(nebula_add_test name)
@@ -75,7 +76,12 @@ if(BUILD_TESTING)
     target_link_libraries(${name} ${PROJECT_NAME})
   endfunction()
 
+  nebula_add_test(test_rate_checker test/test_rate_checker.cpp)
   nebula_add_test(test_core_types test/test_core_types.cpp)
+  
+  nebula_add_test(test_pcd_io test/test_pcd_io.cpp)
+  target_compile_definitions(test_pcd_io PRIVATE 
+    NEBULA_CORE_COMMON_TEST_RESOURCES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test_resources")
 endif()
 
 # ament-specific exports if building with ament

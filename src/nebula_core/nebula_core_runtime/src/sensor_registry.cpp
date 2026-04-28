@@ -101,6 +101,8 @@ void SensorRegistry::load_registry(const std::vector<std::string> & search_paths
               if (fs::exists(rel_to_desc)) {
                   metadata.library_path = rel_to_desc.string();
               } else {
+                  // Standard colcon share path is <prefix>/share/<pkg>/...
+                  // and lib path is <prefix>/lib/
                   fs::path rel_to_lib = it->path().parent_path().parent_path().parent_path() / "lib" / metadata.library_path;
                   if (fs::exists(rel_to_lib)) {
                       metadata.library_path = rel_to_lib.string();
@@ -135,7 +137,7 @@ std::shared_ptr<SensorPlugin> SensorRegistry::load_plugin(const SensorPluginMeta
     return instantiated_plugins_[metadata.package_name];
   }
 
-  void * handle = load_library(metadata.library_path);
+  void * handle = load_library(metadata.library_path, metadata.package_name);
   if (!handle) {
     std::cerr << "Failed to load library " << metadata.library_path << " for plugin " << metadata.package_name << ": " << dlerror() << std::endl;
     return nullptr;
@@ -162,7 +164,7 @@ const std::map<std::string, SensorPluginMetadata> & SensorRegistry::get_register
   return registered_plugins_;
 }
 
-void * SensorRegistry::load_library(const std::string & library_path)
+void * SensorRegistry::load_library(const std::string & library_path, const std::string & package_name)
 {
   if (loaded_libraries_.count(library_path)) {
     return loaded_libraries_[library_path];
@@ -176,9 +178,16 @@ void * SensorRegistry::load_library(const std::string & library_path)
           std::vector<std::string> prefixes;
           boost::split(prefixes, colcon_env, boost::is_any_of(":"));
           for (const auto & prefix : prefixes) {
-              fs::path p = fs::path(prefix) / "lib" / library_path;
-              if (fs::exists(p)) {
-                  handle = dlopen(p.c_str(), RTLD_LAZY | RTLD_GLOBAL);
+              // Try common prefix lib
+              fs::path p1 = fs::path(prefix) / "lib" / library_path;
+              if (fs::exists(p1)) {
+                  handle = dlopen(p1.c_str(), RTLD_LAZY | RTLD_GLOBAL);
+                  if (handle) break;
+              }
+              // Try package-specific lib (for isolated layouts like install/nebula_hesai_decoders/lib)
+              fs::path p2 = fs::path(prefix) / package_name / "lib" / library_path;
+              if (!package_name.empty() && fs::exists(p2)) {
+                  handle = dlopen(p2.c_str(), RTLD_LAZY | RTLD_GLOBAL);
                   if (handle) break;
               }
           }

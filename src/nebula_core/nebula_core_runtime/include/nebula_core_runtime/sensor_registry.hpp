@@ -53,7 +53,7 @@ private:
   std::map<std::string, void *> loaded_libraries_;
   std::map<std::string, std::shared_ptr<SensorPlugin>> instantiated_plugins_;
 
-  void * load_library(const std::string & library_path);
+  void * load_library(const std::string & library_path, const std::string & package_name);
 };
 
 }  // namespace nebula::drivers

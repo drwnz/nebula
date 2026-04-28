@@ -63,6 +63,28 @@ install(FILES
   DESTINATION lib/cmake/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  if(DEFINED ENV{AMENT_PREFIX_PATH})
+    find_package(ament_lint_auto REQUIRED)
+    find_package(ament_cmake_gtest REQUIRED)
+    ament_lint_auto_find_test_dependencies()
+  else()
+    find_package(GTest REQUIRED)
+    enable_testing()
+  endif()
+
+  function(nebula_add_test name)
+    if(DEFINED ENV{AMENT_PREFIX_PATH})
+      ament_add_gtest(${name} ${ARGN})
+    else()
+      add_executable(${name} ${ARGN})
+      target_link_libraries(${name} GTest::gtest_main)
+      add_test(NAME ${name} COMMAND ${name})
+    endif()
+    target_link_libraries(${name} ${PROJECT_NAME})
+  endfunction()
+endif()
+
 if(DEFINED ENV{AMENT_PREFIX_PATH})
     ament_export_include_directories(include)
     ament_export_targets(export_${PROJECT_NAME})

@@ -25,7 +25,8 @@ target_include_directories(
 
 target_link_libraries(nebula_core_runtime PUBLIC
   nlohmann_json::nlohmann_json
-  Boost::headers
+  Boost::filesystem
+  Boost::system
   nebula_core_common::nebula_core_common
   nebula_core_decoders::nebula_core_decoders
   nebula_core_hw_interfaces::nebula_core_hw_interfaces
@@ -75,6 +76,7 @@ if(BUILD_TESTING)
     ament_lint_auto_find_test_dependencies()
   else()
     find_package(GTest REQUIRED)
+    enable_testing()
   endif()
 
   function(nebula_add_test name)
@@ -85,7 +87,7 @@ if(BUILD_TESTING)
       target_link_libraries(${name} GTest::gtest_main)
       add_test(NAME ${name} COMMAND ${name})
     endif()
-    target_link_libraries(${name} ${PROJECT_NAME})
+    target_link_libraries(${name} ${PROJECT_NAME} Boost::filesystem Boost::system)
   endfunction()
 
   nebula_add_test(test_sensor_registry test/test_sensor_registry.cpp)
