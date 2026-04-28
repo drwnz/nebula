@@ -38,17 +38,36 @@ SensorRegistry::~SensorRegistry()
 
 void SensorRegistry::load_registry(const std::vector<std::string> & search_paths)
 {
-  std::vector<std::string> all_paths = search_paths;
+  std::vector<std::string> descriptor_files;
 
-  // 1. Add paths from NEBULA_PLUGINS_PATH
+  // 1. Explicit search paths
+  for (const auto & path : search_paths) {
+      if (fs::exists(path) && fs::is_directory(path)) {
+          for (fs::directory_iterator it(path); it != fs::directory_iterator(); ++it) {
+              if (fs::is_regular_file(it->status()) && it->path().extension() == ".json") {
+                  descriptor_files.push_back(it->path().string());
+              }
+          }
+      }
+  }
+
+  // 2. Add paths from NEBULA_PLUGINS_PATH
   char* nebula_env = std::getenv("NEBULA_PLUGINS_PATH");
   if (nebula_env) {
       std::vector<std::string> env_paths;
       boost::split(env_paths, nebula_env, boost::is_any_of(":"));
-      all_paths.insert(all_paths.end(), env_paths.begin(), env_paths.end());
+      for (const auto & path : env_paths) {
+          if (fs::exists(path) && fs::is_directory(path)) {
+              for (fs::directory_iterator it(path); it != fs::directory_iterator(); ++it) {
+                  if (fs::is_regular_file(it->status()) && it->path().extension() == ".json") {
+                      descriptor_files.push_back(it->path().string());
+                  }
+              }
+          }
+      }
   }
 
-  // 2. Auto-discover from COLCON_PREFIX_PATH
+  // 3. Auto-discover from COLCON_PREFIX_PATH
   char* colcon_env = std::getenv("COLCON_PREFIX_PATH");
   if (colcon_env) {
       std::vector<std::string> prefixes;
@@ -62,7 +81,7 @@ void SensorRegistry::load_registry(const std::vector<std::string> & search_paths
                           if (fs::is_regular_file(pkg_it->status()) && 
                               (pkg_it->path().extension() == ".json") &&
                               (pkg_it->path().filename().string().find("plugin") != std::string::npos)) {
-                              all_paths.push_back(it->path().string());
+                              descriptor_files.push_back(pkg_it->path().string());
                           }
                       }
                   }
@@ -71,50 +90,42 @@ void SensorRegistry::load_registry(const std::vector<std::string> & search_paths
       }
   }
 
-  for (const auto & path : all_paths) {
-    if (!fs::exists(path) || !fs::is_directory(path)) {
-      continue;
-    }
+  for (const auto & file_path : descriptor_files) {
+    try {
+      std::ifstream ifs(file_path);
+      nlohmann::json j = nlohmann::json::parse(ifs);
+      
+      if (!j.contains("vendor") || !j.contains("package") || !j.contains("library")) {
+          continue;
+      }
 
-    for (fs::directory_iterator it(path); it != fs::directory_iterator(); ++it) {
-      if (fs::is_regular_file(it->status()) && it->path().extension() == ".json") {
-        try {
-          std::ifstream ifs(it->path().string());
-          nlohmann::json j = nlohmann::json::parse(ifs);
-          
-          if (!j.contains("vendor") || !j.contains("package") || !j.contains("library")) {
-              continue;
-          }
+      SensorPluginMetadata metadata;
+      metadata.vendor = j.at("vendor").get<std::string>();
+      metadata.package_name = j.at("package").get<std::string>();
+      metadata.library_path = j.at("library").get<std::string>();
+      metadata.factory_symbol = j.value("factory", "create_nebula_sensor_plugin");
+      
+      for (const auto & m : j.at("models")) {
+        metadata.supported_models.push_back(sensor_model_from_string(m.get<std::string>()));
+      }
 
-          SensorPluginMetadata metadata;
-          metadata.vendor = j.at("vendor").get<std::string>();
-          metadata.package_name = j.at("package").get<std::string>();
-          metadata.library_path = j.at("library").get<std::string>();
-          metadata.factory_symbol = j.value("factory", "create_nebula_sensor_plugin");
-          
-          for (const auto & m : j.at("models")) {
-            metadata.supported_models.push_back(sensor_model_from_string(m.get<std::string>()));
-          }
-
-          if (fs::path(metadata.library_path).is_relative()) {
-              fs::path rel_to_desc = it->path().parent_path() / metadata.library_path;
-              if (fs::exists(rel_to_desc)) {
-                  metadata.library_path = rel_to_desc.string();
-              } else {
-                  // Standard colcon share path is <prefix>/share/<pkg>/...
-                  // and lib path is <prefix>/lib/
-                  fs::path rel_to_lib = it->path().parent_path().parent_path().parent_path() / "lib" / metadata.library_path;
-                  if (fs::exists(rel_to_lib)) {
-                      metadata.library_path = rel_to_lib.string();
-                  }
+      if (fs::path(metadata.library_path).is_relative()) {
+          // Try relative to the descriptor file's directory
+          fs::path rel_to_desc = fs::path(file_path).parent_path() / metadata.library_path;
+          if (fs::exists(rel_to_desc)) {
+              metadata.library_path = rel_to_desc.string();
+          } else {
+              // Try in ../../lib/ relative to share/package/
+              fs::path rel_to_lib = fs::path(file_path).parent_path().parent_path().parent_path() / "lib" / metadata.library_path;
+              if (fs::exists(rel_to_lib)) {
+                  metadata.library_path = rel_to_lib.string();
               }
           }
-
-          registered_plugins_[metadata.package_name] = metadata;
-        } catch (const std::exception & e) {
-           std::cerr << "Failed to parse plugin descriptor " << it->path() << ": " << e.what() << std::endl;
-        }
       }
+
+      registered_plugins_[metadata.package_name] = metadata;
+    } catch (const std::exception & e) {
+       std::cerr << "Failed to parse plugin descriptor " << file_path << ": " << e.what() << std::endl;
     }
   }
 }
@@ -184,7 +195,7 @@ void * SensorRegistry::load_library(const std::string & library_path, const std:
                   handle = dlopen(p1.c_str(), RTLD_LAZY | RTLD_GLOBAL);
                   if (handle) break;
               }
-              // Try package-specific lib (for isolated layouts like install/nebula_hesai_decoders/lib)
+              // Try package-specific lib (isolated layouts)
               fs::path p2 = fs::path(prefix) / package_name / "lib" / library_path;
               if (!package_name.empty() && fs::exists(p2)) {
                   handle = dlopen(p2.c_str(), RTLD_LAZY | RTLD_GLOBAL);

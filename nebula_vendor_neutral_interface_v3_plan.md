@@ -13,12 +13,12 @@
 ## 3. High Priority: Nebula Studio Restoration
 - [x] **CMake Fix**: Imported `Boost::filesystem` and `Boost::system`.
 - [x] **Header Fix**: Corrected includes and defined `RadarPoint` alias.
-- [x] **Robust Discovery**: Combined descriptor-based and source-directory scanning for schemas/configs.
+- [x] **Robust Discovery**: Comprehensive search across multiple prefixes and source fallbacks for schemas/configs.
 - [x] **Config Fidelity**: Correctly passing all `extra_params`.
 
 ## 4. Medium Priority: Robustness and Performance
 - [x] **PCAP Fragmentation**: Implemented full IP reassembly with safety bounds.
 - [x] **Discovery Errors**: Improved logging and diagnostic output in `SensorRegistry`.
-- [x] **Library Loading**: Deep search in `COLCON_PREFIX_PATH` and descriptor-relative paths.
+- [x] **Library Loading**: Deep search in `COLCON_PREFIX_PATH` and isolated package lib dirs.
 - [x] **Live Concurrency**: Added mutex serialization in `LiveTransportGraph`.
 - [ ] **Packet Matching**: Expand `PacketRouter` with offsets and masks (Deferred).

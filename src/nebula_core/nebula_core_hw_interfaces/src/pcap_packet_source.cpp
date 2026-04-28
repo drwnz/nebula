@@ -163,6 +163,10 @@ void PcapPacketSource::run()
                     continue;
                 }
                 size_t udp_data_offset = frag_offset - sizeof(struct udphdr);
+                if (udp_data_offset >= ass.data.size()) {
+                    std::cerr << "Warning: Fragment offset out of bounds, skipping." << std::endl;
+                    continue;
+                }
                 if (udp_data_offset + ip_payload_len > ass.data.size()) {
                     ip_payload_len = ass.data.size() - udp_data_offset;
                 }
