@@ -33,14 +33,17 @@ void VelodyneSensorDecoderRuntime::configure(const SensorConfiguration & config)
   v_config->sensor_ip = config.sensor_ip;
   v_config->data_port = config.data_port;
   v_config->frame_id = config.frame_id;
-  
-  // Default values for Velodyne-specific fields if not provided
-  v_config->rotation_speed = 600;
-  v_config->cloud_min_angle = 0;
-  v_config->cloud_max_angle = 360;
+  v_config->rotation_speed = static_cast<int>(config.rotation_speed);
+  v_config->cloud_min_angle = config.fov.azimuth.start;
+  v_config->cloud_max_angle = config.fov.azimuth.end;
+  v_config->min_range = config.min_range;
+  v_config->max_range = config.max_range;
+  v_config->return_mode = config.return_mode;
 
   auto c_config = std::make_shared<VelodyneCalibrationConfiguration>();
-  // In a real scenario, we'd load calibration from a path in config or a default path
+  if (!config.calibration_file.empty()) {
+      c_config->load_from_yaml(config.calibration_file);
+  }
   
   driver_ = std::make_unique<VelodyneDriver>(v_config, c_config);
 }

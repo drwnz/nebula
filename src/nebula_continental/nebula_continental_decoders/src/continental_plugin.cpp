@@ -56,15 +56,33 @@ SensorPacketResult ContinentalARS548SensorDecoderRuntime::process_packet(const S
   return SensorPacketResult::Ignored;
 }
 
-void ContinentalARS548SensorDecoderRuntime::on_detections(std::shared_ptr<continental_msgs::msg::ContinentalArs548DetectionList> msg)
+void ContinentalARS548SensorDecoderRuntime::on_detections(std::unique_ptr<continental_msgs::msg::ContinentalArs548DetectionList> msg)
 {
   progress_.output_count++;
   if (output_callback_) {
+    auto list = std::make_shared<RadarDetectionList>();
+    list->timestamp_ns = static_cast<uint64_t>(msg->header.stamp.sec) * 1e9 + msg->header.stamp.nanosec;
+    list->frame_id = msg->header.frame_id;
+    for (const auto & d : msg->detections) {
+        RadarDetection det;
+        det.x = d.range * std::cos(d.azimuth_angle) * std::cos(d.elevation_angle);
+        det.y = d.range * std::sin(d.azimuth_angle) * std::cos(d.elevation_angle);
+        det.z = d.range * std::sin(d.elevation_angle);
+        det.range = d.range;
+        det.azimuth = d.azimuth_angle;
+        det.elevation = d.elevation_angle;
+        det.range_rate = d.range_rate;
+        det.rcs = d.rcs;
+        det.id = d.measurement_id;
+        det.classification = d.classification;
+        list->detections.push_back(det);
+    }
+    
     SensorDecodedOutput output;
     output.kind = SensorOutputKind::RadarDetections;
-    output.timestamp_ns = static_cast<uint64_t>(msg->header.stamp.sec) * 1e9 + msg->header.stamp.nanosec;
+    output.timestamp_ns = list->timestamp_ns;
     output.sensor_id = "continental_ars548";
-    output.payload = msg;
+    output.payload = list;
     output_callback_(output);
   }
 }
@@ -106,15 +124,33 @@ SensorPacketResult ContinentalSRR520SensorDecoderRuntime::process_packet(const S
   return SensorPacketResult::Ignored;
 }
 
-void ContinentalSRR520SensorDecoderRuntime::on_detections(std::shared_ptr<continental_msgs::msg::ContinentalSrr520DetectionList> msg)
+void ContinentalSRR520SensorDecoderRuntime::on_detections(std::unique_ptr<continental_msgs::msg::ContinentalSrr520DetectionList> msg)
 {
   progress_.output_count++;
   if (output_callback_) {
+    auto list = std::make_shared<RadarDetectionList>();
+    list->timestamp_ns = static_cast<uint64_t>(msg->header.stamp.sec) * 1e9 + msg->header.stamp.nanosec;
+    list->frame_id = msg->header.frame_id;
+    for (const auto & d : msg->detections) {
+        RadarDetection det;
+        det.x = d.x;
+        det.y = d.y;
+        det.z = d.z;
+        det.range = d.range;
+        det.azimuth = d.azimuth;
+        det.elevation = 0.0f;
+        det.range_rate = d.range_rate;
+        det.rcs = d.rcs;
+        det.id = 0; // SRR520 doesn't seem to have measurement ID in the list
+        det.classification = 0;
+        list->detections.push_back(det);
+    }
+
     SensorDecodedOutput output;
     output.kind = SensorOutputKind::RadarDetections;
-    output.timestamp_ns = static_cast<uint64_t>(msg->header.stamp.sec) * 1e9 + msg->header.stamp.nanosec;
+    output.timestamp_ns = list->timestamp_ns;
     output.sensor_id = "continental_srr520";
-    output.payload = msg;
+    output.payload = list;
     output_callback_(output);
   }
 }
@@ -126,6 +162,7 @@ SensorPluginMetadata ContinentalSensorPlugin::metadata() const
   md.vendor = "continental";
   md.package_name = "nebula_continental_decoders";
   md.library_path = "libnebula_continental_decoders_plugin.so";
+  md.factory_symbol = "create_nebula_sensor_plugin";
   md.supported_models = {SensorModel::CONTINENTAL_ARS548, SensorModel::CONTINENTAL_SRR520};
   return md;
 }

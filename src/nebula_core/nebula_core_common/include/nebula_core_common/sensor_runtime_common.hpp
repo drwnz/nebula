@@ -21,6 +21,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <map>
 
 namespace nebula::drivers
 {
@@ -36,6 +37,7 @@ struct SensorPluginMetadata
   std::string vendor;
   std::string package_name;
   std::string library_path;
+  std::string factory_symbol;
   std::vector<SensorModel> supported_models;
 };
 
@@ -72,16 +74,36 @@ enum class SensorPacketResult {
   Error,
 };
 
-// Simplified config that wraps the existing ones or provides a generic way to pass parameters
 struct SensorConfiguration
 {
-  SensorModel sensor_model;
+  SensorModel sensor_model{SensorModel::UNKNOWN};
   std::string frame_id;
   std::string sensor_ip;
   std::string host_ip;
-  uint16_t data_port;
-  // This can be extended to include all fields from LidarConfigurationBase, etc.
-  // For now, let's keep it minimal or decide how to unify.
+  uint16_t data_port{0};
+  uint16_t gnss_port{0};
+  
+  std::string calibration_file;
+  
+  ReturnMode return_mode{ReturnMode::UNKNOWN};
+  
+  struct {
+    struct {
+      float start{0};
+      float end{360};
+    } azimuth;
+    struct {
+      float start{-90};
+      float end{90};
+    } elevation;
+  } fov;
+
+  double rotation_speed{600};
+  double min_range{0.1};
+  double max_range{200.0};
+  
+  // Generic key-value store for vendor-specific parameters
+  std::map<std::string, std::string> extra_params;
 };
 
 }  // namespace nebula::drivers

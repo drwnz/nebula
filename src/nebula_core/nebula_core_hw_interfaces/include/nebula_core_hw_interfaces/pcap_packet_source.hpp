@@ -33,6 +33,7 @@ public:
   void set_packet_callback(SensorPacketCallback callback) override;
   void start() override;
   void stop() override;
+  bool is_running() const { return running_; }
 
 private:
   void run();

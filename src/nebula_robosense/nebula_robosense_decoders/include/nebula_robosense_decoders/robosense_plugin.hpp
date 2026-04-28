@@ -17,6 +17,7 @@
 
 #include <nebula_core_decoders/sensor_plugin.hpp>
 #include <nebula_robosense_decoders/robosense_driver.hpp>
+#include <nebula_robosense_decoders/robosense_info_driver.hpp>
 
 namespace nebula::drivers
 {
@@ -33,6 +34,7 @@ public:
 
 private:
   std::unique_ptr<RobosenseDriver> driver_;
+  std::unique_ptr<RobosenseInfoDriver> info_driver_;
   SensorOutputCallback output_callback_;
   SensorErrorCallback error_callback_;
   SensorProgressCallback progress_callback_;

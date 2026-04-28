@@ -59,10 +59,16 @@ void LiveTransportGraph::configure(const LiveSessionConfig & config)
           sources_.push_back(std::move(source));
       } else if (req.transport == SensorTransportKind::CAN) {
           auto source = std::make_unique<CanPacketSource>();
-          // Assume interface name is passed in some other way or use a default
-          source->configure("can0"); 
+          std::string interface = "can0";
+          if (config.extra_params.count("can_interface")) {
+              interface = config.extra_params.at("can_interface");
+          }
+          source->configure(interface); 
           source->set_packet_callback(std::bind(&LiveTransportGraph::on_packet, this, std::placeholders::_1));
           sources_.push_back(std::move(source));
+      } else if (req.transport == SensorTransportKind::TCP || req.transport == SensorTransportKind::HTTP) {
+          // TODO: Implement TcpPacketSource and HttpPacketSource
+          std::cerr << "Warning: TCP/HTTP transport requested but not yet implemented in generic source graph" << std::endl;
       }
   }
 }

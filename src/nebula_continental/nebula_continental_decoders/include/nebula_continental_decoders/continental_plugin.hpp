@@ -15,6 +15,7 @@
 #ifndef NEBULA_CONTINENTAL_PLUGIN_HPP
 #define NEBULA_CONTINENTAL_PLUGIN_HPP
 
+#include <nebula_core_common/radar_types.hpp>
 #include <nebula_core_decoders/sensor_plugin.hpp>
 #include <nebula_continental_decoders/decoders/continental_ars548_decoder.hpp>
 #include <nebula_continental_decoders/decoders/continental_srr520_decoder.hpp>
@@ -39,7 +40,7 @@ private:
   SensorProgressCallback progress_callback_;
   SensorProgress progress_;
 
-  void on_detections(std::shared_ptr<continental_msgs::msg::ContinentalArs548DetectionList> msg);
+  void on_detections(std::unique_ptr<continental_msgs::msg::ContinentalArs548DetectionList> msg);
 };
 
 class ContinentalSRR520SensorDecoderRuntime : public SensorDecoderRuntime
@@ -59,7 +60,7 @@ private:
   SensorProgressCallback progress_callback_;
   SensorProgress progress_;
 
-  void on_detections(std::shared_ptr<continental_msgs::msg::ContinentalSrr520DetectionList> msg);
+  void on_detections(std::unique_ptr<continental_msgs::msg::ContinentalSrr520DetectionList> msg);
 };
 
 class ContinentalSensorPlugin : public SensorPlugin

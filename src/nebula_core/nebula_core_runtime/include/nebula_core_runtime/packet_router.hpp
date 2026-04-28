@@ -39,9 +39,11 @@ public:
   const SensorProgress & get_metrics() const;
 
 private:
-  std::map<uint16_t, PacketChannelRequirement> udp_port_map_;
-  std::map<uint32_t, PacketChannelRequirement> can_id_map_;
+  std::multimap<uint16_t, PacketChannelRequirement> udp_port_map_;
+  std::multimap<uint32_t, PacketChannelRequirement> can_id_map_;
   SensorProgress metrics_;
+
+  bool match_signature(const std::vector<uint8_t> & payload, const std::string & signature);
 };
 
 }  // namespace nebula::drivers

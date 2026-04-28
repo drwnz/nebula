@@ -67,18 +67,41 @@ void PcapPacketSource::run()
     return;
   }
 
+  int link_type = pcap_datalink(handle);
+  if (link_type != DLT_EN10MB) {
+      std::cerr << "Unsupported PCAP link type: " << link_type << ". Only Ethernet supported." << std::endl;
+      pcap_close(handle);
+      running_ = false;
+      return;
+  }
+
   struct pcap_pkthdr * header;
   const u_char * pkt_data;
 
   while (running_ && pcap_next_ex(handle, &header, &pkt_data) >= 0) {
-    struct ether_header * eth_hdr = (struct ether_header *)pkt_data;
-    if (ntohs(eth_hdr->ether_type) != ETHERTYPE_IP) continue;
+    if (header->caplen < sizeof(struct ether_header)) continue;
 
-    struct ip * ip_hdr = (struct ip *)(pkt_data + sizeof(struct ether_header));
+    struct ether_header * eth_hdr = (struct ether_header *)pkt_data;
+    uint16_t eth_type = ntohs(eth_hdr->ether_type);
+    size_t eth_hdr_len = sizeof(struct ether_header);
+
+    // Handle VLAN (802.1Q) tags
+    if (eth_type == 0x8100) {
+        if (header->caplen < eth_hdr_len + 4) continue;
+        eth_type = ntohs(*(uint16_t *)(pkt_data + eth_hdr_len + 2));
+        eth_hdr_len += 4;
+    }
+
+    if (eth_type != ETHERTYPE_IP) continue;
+    if (header->caplen < eth_hdr_len + sizeof(struct ip)) continue;
+
+    struct ip * ip_hdr = (struct ip *)(pkt_data + eth_hdr_len);
     if (ip_hdr->ip_p != IPPROTO_UDP) continue;
 
     size_t ip_hdr_len = ip_hdr->ip_hl * 4;
-    struct udphdr * udp_hdr = (struct udphdr *)(pkt_data + sizeof(struct ether_header) + ip_hdr_len);
+    if (header->caplen < eth_hdr_len + ip_hdr_len + sizeof(struct udphdr)) continue;
+
+    struct udphdr * udp_hdr = (struct udphdr *)(pkt_data + eth_hdr_len + ip_hdr_len);
 
     uint16_t src_port = ntohs(udp_hdr->uh_sport);
     uint16_t dst_port = ntohs(udp_hdr->uh_dport);
@@ -88,13 +111,21 @@ void PcapPacketSource::run()
     inet_ntop(AF_INET, &(ip_hdr->ip_src), src_ip, INET_ADDRSTRLEN);
     inet_ntop(AF_INET, &(ip_hdr->ip_dst), dst_ip, INET_ADDRSTRLEN);
 
-    const u_char * payload = pkt_data + sizeof(struct ether_header) + ip_hdr_len + sizeof(struct udphdr);
-    uint16_t payload_len = ntohs(udp_hdr->uh_ulen) - sizeof(struct udphdr);
+    size_t payload_offset = eth_hdr_len + ip_hdr_len + sizeof(struct udphdr);
+    uint16_t udp_len = ntohs(udp_hdr->uh_ulen);
+    
+    if (udp_len < sizeof(struct udphdr)) continue;
+    uint16_t payload_len = udp_len - sizeof(struct udphdr);
+
+    // Safety check: ensure payload doesn't exceed captured data
+    if (payload_offset + payload_len > header->caplen) {
+        payload_len = header->caplen - payload_offset;
+    }
 
     if (callback_) {
       SensorPacket sp;
       sp.transport = SensorTransportKind::Replay;
-      sp.channel = SensorPacketChannel::Unknown; // To be assigned by router
+      sp.channel = SensorPacketChannel::Unknown;
       sp.timestamp_ns = static_cast<uint64_t>(header->ts.tv_sec) * 1000000000ULL + header->ts.tv_usec * 1000ULL;
       
       SensorEndpoint src;
@@ -107,7 +138,7 @@ void PcapPacketSource::run()
       dst.port = dst_port;
       sp.destination = dst;
 
-      sp.payload.assign(payload, payload + payload_len);
+      sp.payload.assign(pkt_data + payload_offset, pkt_data + payload_offset + payload_len);
       
       callback_(sp);
     }

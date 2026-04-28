@@ -16,6 +16,7 @@
 
 #include <nlohmann/json.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include <dlfcn.h>
 #include <fstream>
@@ -37,7 +38,41 @@ SensorRegistry::~SensorRegistry()
 
 void SensorRegistry::load_registry(const std::vector<std::string> & search_paths)
 {
-  for (const auto & path : search_paths) {
+  std::vector<std::string> all_paths = search_paths;
+
+  // 1. Add paths from NEBULA_PLUGINS_PATH
+  char* nebula_env = std::getenv("NEBULA_PLUGINS_PATH");
+  if (nebula_env) {
+      std::vector<std::string> env_paths;
+      boost::split(env_paths, nebula_env, boost::is_any_of(":"));
+      all_paths.insert(all_paths.end(), env_paths.begin(), env_paths.end());
+  }
+
+  // 2. Auto-discover from COLCON_PREFIX_PATH
+  char* colcon_env = std::getenv("COLCON_PREFIX_PATH");
+  if (colcon_env) {
+      std::vector<std::string> prefixes;
+      boost::split(prefixes, colcon_env, boost::is_any_of(":"));
+      for (const auto & prefix : prefixes) {
+          fs::path share_path = fs::path(prefix) / "share";
+          if (fs::exists(share_path) && fs::is_directory(share_path)) {
+              for (fs::directory_iterator it(share_path); it != fs::directory_iterator(); ++it) {
+                  if (fs::is_directory(it->status())) {
+                      // Check for descriptors in each package share
+                      for (fs::directory_iterator pkg_it(it->path()); pkg_it != fs::directory_iterator(); ++pkg_it) {
+                          if (fs::is_regular_file(pkg_it->status()) && 
+                              (pkg_it->path().extension() == ".json") &&
+                              (pkg_it->path().filename().string().find("plugin") != std::string::npos)) {
+                              all_paths.push_back(it->path().string());
+                          }
+                      }
+                  }
+              }
+          }
+      }
+  }
+
+  for (const auto & path : all_paths) {
     if (!fs::exists(path) || !fs::is_directory(path)) {
       continue;
     }
@@ -47,11 +82,16 @@ void SensorRegistry::load_registry(const std::vector<std::string> & search_paths
         try {
           std::ifstream ifs(it->path().string());
           nlohmann::json j = nlohmann::json::parse(ifs);
+          
+          if (!j.contains("vendor") || !j.contains("package") || !j.contains("library")) {
+              continue; // Not a nebula plugin descriptor
+          }
 
           SensorPluginMetadata metadata;
           metadata.vendor = j.at("vendor").get<std::string>();
           metadata.package_name = j.at("package").get<std::string>();
           metadata.library_path = j.at("library").get<std::string>();
+          metadata.factory_symbol = j.value("factory", "create_nebula_sensor_plugin");
           
           for (const auto & m : j.at("models")) {
             metadata.supported_models.push_back(sensor_model_from_string(m.get<std::string>()));
@@ -59,7 +99,7 @@ void SensorRegistry::load_registry(const std::vector<std::string> & search_paths
 
           registered_plugins_[metadata.package_name] = metadata;
         } catch (const std::exception & e) {
-          std::cerr << "Failed to parse plugin descriptor " << it->path() << ": " << e.what() << std::endl;
+          // std::cerr << "Failed to parse plugin descriptor " << it->path() << ": " << e.what() << std::endl;
         }
       }
     }
@@ -86,14 +126,15 @@ std::shared_ptr<SensorPlugin> SensorRegistry::load_plugin(const SensorPluginMeta
 
   void * handle = load_library(metadata.library_path);
   if (!handle) {
+    // Try to find library in LD_LIBRARY_PATH or relative to descriptor if it failed?
+    // For now we assume library_path is either absolute or findable by dlopen
     return nullptr;
   }
 
-  // Expecting a factory function: extern "C" nebula::drivers::SensorPlugin * create_nebula_sensor_plugin()
   using CreateFunc = SensorPlugin * (*)();
-  auto create_func = reinterpret_cast<CreateFunc>(dlsym(handle, "create_nebula_sensor_plugin"));
+  auto create_func = reinterpret_cast<CreateFunc>(dlsym(handle, metadata.factory_symbol.c_str()));
   if (!create_func) {
-    std::cerr << "Failed to find factory symbol in " << metadata.library_path << ": " << dlerror() << std::endl;
+    std::cerr << "Failed to find factory symbol '" << metadata.factory_symbol << "' in " << metadata.library_path << ": " << dlerror() << std::endl;
     return nullptr;
   }
 
@@ -117,7 +158,7 @@ void * SensorRegistry::load_library(const std::string & library_path)
 
   void * handle = dlopen(library_path.c_str(), RTLD_LAZY | RTLD_GLOBAL);
   if (!handle) {
-    std::cerr << "Failed to load library " << library_path << ": " << dlerror() << std::endl;
+    // std::cerr << "Failed to load library " << library_path << ": " << dlerror() << std::endl;
     return nullptr;
   }
 

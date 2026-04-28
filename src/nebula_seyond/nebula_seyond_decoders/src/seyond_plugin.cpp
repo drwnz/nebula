@@ -33,6 +33,12 @@ void SeyondSensorDecoderRuntime::configure(const SensorConfiguration & config)
   s_config.connection.udp_port = config.data_port;
   s_config.frame_id = config.frame_id;
   
+  // Use expanded config fields
+  s_config.fov.azimuth.start = config.fov.azimuth.start;
+  s_config.fov.azimuth.end = config.fov.azimuth.end;
+  s_config.fov.elevation.start = config.fov.elevation.start;
+  s_config.fov.elevation.end = config.fov.elevation.end;
+
   switch (config.sensor_model) {
       case SensorModel::SEYOND_FALCON_K: s_config.sensor_model = SeyondSensorModel::FALCON_K; break;
       case SensorModel::SEYOND_ROBIN_W: s_config.sensor_model = SeyondSensorModel::ROBIN_W; break;

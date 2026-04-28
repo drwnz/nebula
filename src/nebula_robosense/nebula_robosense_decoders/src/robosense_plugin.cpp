@@ -32,16 +32,19 @@ void RobosenseSensorDecoderRuntime::configure(const SensorConfiguration & config
   r_config->host_ip = config.host_ip;
   r_config->sensor_ip = config.sensor_ip;
   r_config->data_port = config.data_port;
+  r_config->gnss_port = config.gnss_port;
   r_config->frame_id = config.frame_id;
-  
-  // Defaults
-  r_config->gnss_port = 7788;
-  r_config->scan_phase = 0;
+  r_config->rotation_speed = config.rotation_speed;
+  r_config->cloud_min_angle = config.fov.azimuth.start;
+  r_config->cloud_max_angle = config.fov.azimuth.end;
 
   auto c_config = std::make_shared<RobosenseCalibrationConfiguration>();
-  // Placeholder for calibration loading
+  if (!config.calibration_file.empty()) {
+      c_config->load_from_yaml(config.calibration_file);
+  }
   
   driver_ = std::make_unique<RobosenseDriver>(r_config, c_config);
+  info_driver_ = std::make_unique<RobosenseInfoDriver>(r_config);
 }
 
 void RobosenseSensorDecoderRuntime::set_output_callback(SensorOutputCallback callback)
@@ -61,19 +64,13 @@ void RobosenseSensorDecoderRuntime::set_progress_callback(SensorProgressCallback
 
 SensorPacketResult RobosenseSensorDecoderRuntime::process_packet(const SensorPacket & packet)
 {
-  if (!driver_) {
-    return SensorPacketResult::Error;
-  }
-
   progress_.processed_packets++;
 
-  if (packet.channel == SensorPacketChannel::Data || packet.channel == SensorPacketChannel::Unknown) {
+  if (packet.channel == SensorPacketChannel::Data) {
+    if (!driver_) return SensorPacketResult::Error;
     progress_.matched_packets++;
-    
     auto [pointcloud, timestamp_s] = driver_->parse_cloud_packet(packet.payload);
-    
     progress_.decoded_packets++;
-
     if (pointcloud) {
       progress_.output_count++;
       if (output_callback_) {
@@ -85,9 +82,24 @@ SensorPacketResult RobosenseSensorDecoderRuntime::process_packet(const SensorPac
         output_callback_(output);
       }
     }
-
     if (progress_callback_) progress_callback_(progress_);
     return SensorPacketResult::Success;
+  } else if (packet.channel == SensorPacketChannel::Info) {
+    if (!info_driver_) return SensorPacketResult::Error;
+    progress_.matched_packets++;
+    if (info_driver_->decode_info_packet(packet.payload) == Status::OK) {
+        progress_.decoded_packets++;
+        if (output_callback_) {
+            SensorDecodedOutput output;
+            output.kind = SensorOutputKind::Status;
+            output.timestamp_ns = packet.timestamp_ns;
+            output.sensor_id = "robosense";
+            output.payload = info_driver_->get_sensor_info();
+            output_callback_(output);
+        }
+        if (progress_callback_) progress_callback_(progress_);
+        return SensorPacketResult::Success;
+    }
   }
 
   progress_.dropped_packets++;
@@ -101,7 +113,6 @@ void RobosenseSensorDecoderRuntime::flush()
 
 void RobosenseSensorDecoderRuntime::on_pointcloud([[maybe_unused]] const NebulaPointCloudPtr & pointcloud, [[maybe_unused]] double timestamp_s)
 {
-    // This is handled in process_packet directly for Robosense since parse_cloud_packet returns it
 }
 
 SensorPluginMetadata RobosenseSensorPlugin::metadata() const
@@ -110,6 +121,7 @@ SensorPluginMetadata RobosenseSensorPlugin::metadata() const
   md.vendor = "robosense";
   md.package_name = "nebula_robosense_decoders";
   md.library_path = "libnebula_robosense_decoders_plugin.so";
+  md.factory_symbol = "create_nebula_sensor_plugin";
   md.supported_models = {
     SensorModel::ROBOSENSE_HELIOS,
     SensorModel::ROBOSENSE_BPEARL_V3,
@@ -125,8 +137,8 @@ std::vector<SensorModelInfo> RobosenseSensorPlugin::supported_models() const
 {
   return {
     {SensorModel::ROBOSENSE_HELIOS, "Helios", "Robosense Helios"},
-    {SensorModel::ROBOSENSE_BPEARL_V3, "Bpearl V3.0", "Robosense Bpearl V3.0"},
-    {SensorModel::ROBOSENSE_BPEARL_V4, "Bpearl V4.0", "Robosense Bpearl V4.0"},
+    {SensorModel::ROBOSENSE_BPEARL_V3, "Bpearl_V3", "Robosense Bpearl V3.0"},
+    {SensorModel::ROBOSENSE_BPEARL_V4, "Bpearl_V4", "Robosense Bpearl V4.0"},
     {SensorModel::ROBOSENSE_E1, "E1", "Robosense E1"},
     {SensorModel::ROBOSENSE_EM4, "EM4", "Robosense EM4"},
     {SensorModel::ROBOSENSE_EMX, "EMX", "Robosense EMX"}
@@ -135,23 +147,50 @@ std::vector<SensorModelInfo> RobosenseSensorPlugin::supported_models() const
 
 std::vector<PacketChannelRequirement> RobosenseSensorPlugin::packet_requirements(const SensorConfiguration & config) const
 {
-  PacketChannelRequirement req;
-  req.transport = SensorTransportKind::UDP;
-  req.channel = SensorPacketChannel::Data;
-  req.required = true;
-  req.udp_destination_port = config.data_port;
-  return {req};
+  std::vector<PacketChannelRequirement> reqs;
+  
+  // MSOP
+  PacketChannelRequirement msop;
+  msop.transport = SensorTransportKind::UDP;
+  msop.channel = SensorPacketChannel::Data;
+  msop.required = true;
+  msop.udp_destination_port = config.data_port;
+  msop.payload_signature = "55aa"; // Standard Robosense MSOP header
+  reqs.push_back(msop);
+
+  // DIFOP
+  PacketChannelRequirement difop;
+  difop.transport = SensorTransportKind::UDP;
+  difop.channel = SensorPacketChannel::Info;
+  difop.required = true;
+  difop.udp_destination_port = config.gnss_port != 0 ? config.gnss_port : 7788;
+  difop.payload_signature = "a55a"; // Standard Robosense DIFOP header
+  reqs.push_back(difop);
+
+  return reqs;
 }
 
 std::vector<LiveTransportRequirement> RobosenseSensorPlugin::live_transport_requirements(const SensorConfiguration & config) const
 {
-  LiveTransportRequirement req;
-  req.transport = SensorTransportKind::UDP;
-  req.channel = SensorPacketChannel::Data;
-  req.required = true;
-  req.name = "robosense_udp_data";
-  req.port = config.data_port;
-  return {req};
+  std::vector<LiveTransportRequirement> reqs;
+  
+  LiveTransportRequirement msop;
+  msop.transport = SensorTransportKind::UDP;
+  msop.channel = SensorPacketChannel::Data;
+  msop.required = true;
+  msop.name = "robosense_msop";
+  msop.port = config.data_port;
+  reqs.push_back(msop);
+
+  LiveTransportRequirement difop;
+  difop.transport = SensorTransportKind::UDP;
+  difop.channel = SensorPacketChannel::Info;
+  difop.required = true;
+  difop.name = "robosense_difop";
+  difop.port = config.gnss_port != 0 ? config.gnss_port : 7788;
+  reqs.push_back(difop);
+
+  return reqs;
 }
 
 std::unique_ptr<SensorDecoderRuntime> RobosenseSensorPlugin::create_decoder_runtime() const

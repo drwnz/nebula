@@ -41,6 +41,7 @@ public:
   
   void start();
   void stop();
+  void wait_until_finished();
 
 private:
   void on_packet(const SensorPacket & packet);

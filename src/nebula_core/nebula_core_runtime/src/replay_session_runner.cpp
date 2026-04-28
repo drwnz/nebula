@@ -84,6 +84,13 @@ void ReplaySessionRunner::stop()
   }
 }
 
+void ReplaySessionRunner::wait_until_finished()
+{
+    while (source_ && source_->is_running()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+}
+
 void ReplaySessionRunner::on_packet(const SensorPacket & packet)
 {
   SensorPacket mutable_packet = packet;

@@ -34,20 +34,27 @@ void HesaiSensorDecoderRuntime::configure(const SensorConfiguration & config)
   h_config->sensor_ip = config.sensor_ip;
   h_config->data_port = config.data_port;
   h_config->frame_id = config.frame_id;
-  
-  // Defaults
-  h_config->rotation_speed = 600;
-  h_config->cloud_min_angle = 0;
-  h_config->cloud_max_angle = 360;
+  h_config->rotation_speed = static_cast<int>(config.rotation_speed);
+  h_config->cloud_min_angle = config.fov.azimuth.start;
+  h_config->cloud_max_angle = config.fov.azimuth.end;
+  h_config->min_range = config.min_range;
+  h_config->max_range = config.max_range;
+  h_config->return_mode = config.return_mode;
   h_config->calibration_download_enabled = false;
 
   std::shared_ptr<HesaiCalibrationConfigurationBase> c_config;
   if (config.sensor_model == SensorModel::HESAI_PANDARAT128) {
-      c_config = std::make_shared<HesaiCorrection>();
+      auto correction = std::make_shared<HesaiCorrection>();
+      if (!config.calibration_file.empty()) correction->load_from_file(config.calibration_file);
+      c_config = correction;
   } else if (config.sensor_model == SensorModel::HESAI_FTX140 || config.sensor_model == SensorModel::HESAI_FTX180) {
-      c_config = std::make_shared<HesaiCorrectionFTX>();
+      auto correction = std::make_shared<HesaiCorrectionFTX>();
+      if (!config.calibration_file.empty()) correction->load_from_file(config.calibration_file);
+      c_config = correction;
   } else {
-      c_config = std::make_shared<HesaiCalibrationConfiguration>();
+      auto calibration = std::make_shared<HesaiCalibrationConfiguration>();
+      if (!config.calibration_file.empty()) calibration->load_from_file(config.calibration_file);
+      c_config = calibration;
   }
   
   auto logger = std::make_shared<loggers::ConsoleLogger>("HesaiPlugin");
