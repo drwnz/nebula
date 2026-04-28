@@ -2,12 +2,10 @@ cmake_minimum_required(VERSION 3.20)
 project(nebula_core_decoders)
 
 find_package(autoware_cmake REQUIRED)
-find_package(ros_environment REQUIRED)
 find_package(PNG REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(Boost REQUIRED)
 find_package(nebula_core_common REQUIRED)
-find_package(sensor_msgs REQUIRED)
 
 
 add_library(nebula_core_decoders SHARED src/dummy.cpp)

@@ -23,6 +23,7 @@
 #include <memory>
 #include <vector>
 #include <map>
+#include <mutex>
 
 namespace nebula::drivers
 {
@@ -55,6 +56,7 @@ private:
   
   SensorOutputCallback output_callback_;
   SensorProgressCallback progress_callback_;
+  std::mutex mutex_;
 };
 
 }  // namespace nebula::drivers

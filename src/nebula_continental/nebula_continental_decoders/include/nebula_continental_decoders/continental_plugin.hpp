@@ -17,8 +17,8 @@
 
 #include <nebula_core_common/radar_types.hpp>
 #include <nebula_core_decoders/sensor_plugin.hpp>
-#include <nebula_continental_decoders/decoders/continental_ars548_decoder.hpp>
-#include <nebula_continental_decoders/decoders/continental_srr520_decoder.hpp>
+
+#include <memory>
 
 namespace nebula::drivers
 {
@@ -26,6 +26,8 @@ namespace nebula::drivers
 class ContinentalARS548SensorDecoderRuntime : public SensorDecoderRuntime
 {
 public:
+  ContinentalARS548SensorDecoderRuntime();
+  ~ContinentalARS548SensorDecoderRuntime() override;
   void configure(const SensorConfiguration & config) override;
   void set_output_callback(SensorOutputCallback callback) override { output_callback_ = callback; }
   void set_error_callback(SensorErrorCallback callback) override { error_callback_ = callback; }
@@ -34,18 +36,19 @@ public:
   void flush() override {}
 
 private:
-  std::unique_ptr<continental_ars548::ContinentalARS548Decoder> decoder_;
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
   SensorOutputCallback output_callback_;
   SensorErrorCallback error_callback_;
   SensorProgressCallback progress_callback_;
   SensorProgress progress_;
-
-  void on_detections(std::unique_ptr<continental_msgs::msg::ContinentalArs548DetectionList> msg);
 };
 
 class ContinentalSRR520SensorDecoderRuntime : public SensorDecoderRuntime
 {
 public:
+  ContinentalSRR520SensorDecoderRuntime();
+  ~ContinentalSRR520SensorDecoderRuntime() override;
   void configure(const SensorConfiguration & config) override;
   void set_output_callback(SensorOutputCallback callback) override { output_callback_ = callback; }
   void set_error_callback(SensorErrorCallback callback) override { error_callback_ = callback; }
@@ -54,13 +57,12 @@ public:
   void flush() override {}
 
 private:
-  std::unique_ptr<continental_srr520::ContinentalSRR520Decoder> decoder_;
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
   SensorOutputCallback output_callback_;
   SensorErrorCallback error_callback_;
   SensorProgressCallback progress_callback_;
   SensorProgress progress_;
-
-  void on_detections(std::unique_ptr<continental_msgs::msg::ContinentalSrr520DetectionList> msg);
 };
 
 class ContinentalSensorPlugin : public SensorPlugin

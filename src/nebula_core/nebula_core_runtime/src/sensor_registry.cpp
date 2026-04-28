@@ -97,9 +97,24 @@ void SensorRegistry::load_registry(const std::vector<std::string> & search_paths
             metadata.supported_models.push_back(sensor_model_from_string(m.get<std::string>()));
           }
 
+          // If library_path is relative, make it relative to the descriptor's parent package or prefix
+          if (fs::path(metadata.library_path).is_relative()) {
+              // Try relative to the share/package/ directory first
+              fs::path rel_to_desc = it->path().parent_path() / metadata.library_path;
+              if (fs::exists(rel_to_desc)) {
+                  metadata.library_path = rel_to_desc.string();
+              } else {
+                  // Try in ../../lib/ relative to share/package/ (standard colcon layout)
+                  fs::path rel_to_lib = it->path().parent_path().parent_path().parent_path() / "lib" / metadata.library_path;
+                  if (fs::exists(rel_to_lib)) {
+                      metadata.library_path = rel_to_lib.string();
+                  }
+              }
+          }
+
           registered_plugins_[metadata.package_name] = metadata;
         } catch (const std::exception & e) {
-          // std::cerr << "Failed to parse plugin descriptor " << it->path() << ": " << e.what() << std::endl;
+           std::cerr << "Failed to parse plugin descriptor " << it->path() << ": " << e.what() << std::endl;
         }
       }
     }
@@ -126,8 +141,7 @@ std::shared_ptr<SensorPlugin> SensorRegistry::load_plugin(const SensorPluginMeta
 
   void * handle = load_library(metadata.library_path);
   if (!handle) {
-    // Try to find library in LD_LIBRARY_PATH or relative to descriptor if it failed?
-    // For now we assume library_path is either absolute or findable by dlopen
+    std::cerr << "Failed to load library " << metadata.library_path << " for plugin " << metadata.package_name << std::endl;
     return nullptr;
   }
 
@@ -141,6 +155,8 @@ std::shared_ptr<SensorPlugin> SensorRegistry::load_plugin(const SensorPluginMeta
   std::shared_ptr<SensorPlugin> plugin(create_func());
   if (plugin) {
     instantiated_plugins_[metadata.package_name] = plugin;
+  } else {
+      std::cerr << "Factory function '" << metadata.factory_symbol << "' returned nullptr for plugin " << metadata.package_name << std::endl;
   }
   return plugin;
 }

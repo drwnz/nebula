@@ -65,6 +65,15 @@ struct SensorPacket
   std::vector<uint8_t> payload;
 };
 
+struct NebulaPacket
+{
+  struct {
+    uint32_t sec;
+    uint32_t nanosec;
+  } stamp;
+  std::vector<uint8_t> data;
+};
+
 }  // namespace nebula::drivers
 
 #endif  // NEBULA_SENSOR_PACKET_HPP

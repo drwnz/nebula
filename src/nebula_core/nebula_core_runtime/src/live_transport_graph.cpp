@@ -105,6 +105,7 @@ void LiveTransportGraph::stop()
 
 void LiveTransportGraph::on_packet(const SensorPacket & packet)
 {
+  std::lock_guard<std::mutex> lock(mutex_);
   SensorPacket mutable_packet = packet;
   if (router_->route(mutable_packet)) {
     runtime_->process_packet(mutable_packet);
