@@ -21,6 +21,7 @@
 #include <arpa/inet.h>
 
 #include <iostream>
+#include <algorithm>
 
 namespace nebula::drivers
 {
@@ -85,7 +86,6 @@ void PcapPacketSource::run()
     uint16_t eth_type = ntohs(eth_hdr->ether_type);
     size_t eth_hdr_len = sizeof(struct ether_header);
 
-    // Handle VLAN (802.1Q) tags
     if (eth_type == 0x8100) {
         if (header->caplen < eth_hdr_len + 4) continue;
         eth_type = ntohs(*(uint16_t *)(pkt_data + eth_hdr_len + 2));
@@ -96,51 +96,87 @@ void PcapPacketSource::run()
     if (header->caplen < eth_hdr_len + sizeof(struct ip)) continue;
 
     struct ip * ip_hdr = (struct ip *)(pkt_data + eth_hdr_len);
-    if (ip_hdr->ip_p != IPPROTO_UDP) continue;
-
     size_t ip_hdr_len = ip_hdr->ip_hl * 4;
-    if (header->caplen < eth_hdr_len + ip_hdr_len + sizeof(struct udphdr)) continue;
+    if (header->caplen < eth_hdr_len + ip_hdr_len) continue;
 
-    struct udphdr * udp_hdr = (struct udphdr *)(pkt_data + eth_hdr_len + ip_hdr_len);
-
-    uint16_t src_port = ntohs(udp_hdr->uh_sport);
-    uint16_t dst_port = ntohs(udp_hdr->uh_dport);
+    uint16_t ip_off = ntohs(ip_hdr->ip_off);
+    uint16_t frag_offset = (ip_off & IP_OFFMASK) * 8;
+    bool more_frags = (ip_off & IP_MF) != 0;
     
-    char src_ip[INET_ADDRSTRLEN];
-    char dst_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(ip_hdr->ip_src), src_ip, INET_ADDRSTRLEN);
-    inet_ntop(AF_INET, &(ip_hdr->ip_dst), dst_ip, INET_ADDRSTRLEN);
+    char src_ip_str[INET_ADDRSTRLEN];
+    char dst_ip_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(ip_hdr->ip_src), src_ip_str, INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, &(ip_hdr->ip_dst), dst_ip_str, INET_ADDRSTRLEN);
 
-    size_t payload_offset = eth_hdr_len + ip_hdr_len + sizeof(struct udphdr);
-    uint16_t udp_len = ntohs(udp_hdr->uh_ulen);
-    
-    if (udp_len < sizeof(struct udphdr)) continue;
-    uint16_t payload_len = udp_len - sizeof(struct udphdr);
+    if (ip_hdr->ip_p == IPPROTO_UDP) {
+        const u_char * ip_payload = pkt_data + eth_hdr_len + ip_hdr_len;
+        size_t ip_payload_len = ntohs(ip_hdr->ip_len) - ip_hdr_len;
+        
+        // Truncated packet check
+        if (eth_hdr_len + ip_hdr_len + ip_payload_len > header->caplen) {
+            std::cerr << "Warning: PCAP packet truncated, skipping." << std::endl;
+            continue;
+        }
 
-    // Safety check: ensure payload doesn't exceed captured data
-    if (payload_offset + payload_len > header->caplen) {
-        payload_len = header->caplen - payload_offset;
-    }
+        ReassemblyKey key{ip_hdr->ip_src.s_addr, ip_hdr->ip_dst.s_addr, ntohs(ip_hdr->ip_id), ip_hdr->ip_p};
 
-    if (callback_) {
-      SensorPacket sp;
-      sp.transport = SensorTransportKind::Replay;
-      sp.channel = SensorPacketChannel::Unknown;
-      sp.timestamp_ns = static_cast<uint64_t>(header->ts.tv_sec) * 1000000000ULL + header->ts.tv_usec * 1000ULL;
-      
-      SensorEndpoint src;
-      src.address = src_ip;
-      src.port = src_port;
-      sp.source = src;
+        if (frag_offset == 0) {
+            if (ip_payload_len < sizeof(struct udphdr)) continue;
+            struct udphdr * udp_hdr = (struct udphdr *)ip_payload;
+            uint16_t src_port = ntohs(udp_hdr->uh_sport);
+            uint16_t dst_port = ntohs(udp_hdr->uh_dport);
+            uint16_t udp_len = ntohs(udp_hdr->uh_ulen);
 
-      SensorEndpoint dst;
-      dst.address = dst_ip;
-      dst.port = dst_port;
-      sp.destination = dst;
+            if (!more_frags) {
+                // Not fragmented
+                if (callback_) {
+                    SensorPacket sp;
+                    sp.transport = SensorTransportKind::Replay;
+                    sp.timestamp_ns = static_cast<uint64_t>(header->ts.tv_sec) * 1e9 + header->ts.tv_usec * 1e3;
+                    sp.source = {src_ip_str, src_port};
+                    sp.destination = {dst_ip_str, dst_port};
+                    sp.payload.assign(ip_payload + sizeof(struct udphdr), ip_payload + udp_len);
+                    callback_(sp);
+                }
+            } else {
+                // First fragment of many
+                auto & ass = assemblies_[key];
+                ass.src_ip = src_ip_str;
+                ass.dst_ip = dst_ip_str;
+                ass.src_port = src_port;
+                ass.dst_port = dst_port;
+                ass.timestamp_ns = static_cast<uint64_t>(header->ts.tv_sec) * 1e9 + header->ts.tv_usec * 1e3;
+                ass.total_size = udp_len - sizeof(struct udphdr);
+                ass.data.resize(ass.total_size);
+                ass.received.resize(ass.total_size, false);
+                
+                size_t frag_data_len = ip_payload_len - sizeof(struct udphdr);
+                std::copy(ip_payload + sizeof(struct udphdr), ip_payload + ip_payload_len, ass.data.begin());
+                std::fill(ass.received.begin(), ass.received.begin() + frag_data_len, true);
+            }
+        } else {
+            // Subsequent fragment
+            if (assemblies_.count(key)) {
+                auto & ass = assemblies_[key];
+                size_t udp_data_offset = frag_offset - sizeof(struct udphdr);
+                std::copy(ip_payload, ip_payload + ip_payload_len, ass.data.begin() + udp_data_offset);
+                std::fill(ass.received.begin() + udp_data_offset, ass.received.begin() + udp_data_offset + ip_payload_len, true);
+                if (!more_frags) ass.saw_last = true;
 
-      sp.payload.assign(pkt_data + payload_offset, pkt_data + payload_offset + payload_len);
-      
-      callback_(sp);
+                if (ass.is_complete()) {
+                    if (callback_) {
+                        SensorPacket sp;
+                        sp.transport = SensorTransportKind::Replay;
+                        sp.timestamp_ns = ass.timestamp_ns;
+                        sp.source = {ass.src_ip, ass.src_port};
+                        sp.destination = {ass.dst_ip, ass.dst_port};
+                        sp.payload = std::move(ass.data);
+                        callback_(sp);
+                    }
+                    assemblies_.erase(key);
+                }
+            }
+        }
     }
   }
 

@@ -42,7 +42,7 @@ void VelodyneSensorDecoderRuntime::configure(const SensorConfiguration & config)
 
   auto c_config = std::make_shared<VelodyneCalibrationConfiguration>();
   if (!config.calibration_file.empty()) {
-      c_config->load_from_yaml(config.calibration_file);
+      c_config->load_from_file(config.calibration_file);
   }
   
   driver_ = std::make_unique<VelodyneDriver>(v_config, c_config);

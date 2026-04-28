@@ -34,13 +34,17 @@ void RobosenseSensorDecoderRuntime::configure(const SensorConfiguration & config
   r_config->data_port = config.data_port;
   r_config->gnss_port = config.gnss_port;
   r_config->frame_id = config.frame_id;
-  r_config->rotation_speed = config.rotation_speed;
-  r_config->cloud_min_angle = config.fov.azimuth.start;
-  r_config->cloud_max_angle = config.fov.azimuth.end;
+  
+  // Use LidarConfigurationBase fields via r_config directly (assuming they map)
+  // Robosense uses scan_phase for azimuth trimming usually, but LidarConfigurationBase
+  // has cloud_min_angle etc. 
+  r_config->cloud_min_angle = static_cast<uint16_t>(config.fov.azimuth.start);
+  r_config->cloud_max_angle = static_cast<uint16_t>(config.fov.azimuth.end);
+  r_config->rotation_speed = static_cast<uint16_t>(config.rotation_speed);
 
   auto c_config = std::make_shared<RobosenseCalibrationConfiguration>();
   if (!config.calibration_file.empty()) {
-      c_config->load_from_yaml(config.calibration_file);
+      c_config->load_from_file(config.calibration_file);
   }
   
   driver_ = std::make_unique<RobosenseDriver>(r_config, c_config);

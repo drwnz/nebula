@@ -1,12 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
 project(nebula_core_decoders)
 
-find_package(autoware_cmake REQUIRED)
+if(DEFINED ENV{AMENT_PREFIX_PATH})
+    find_package(autoware_cmake REQUIRED)
+endif()
+
 find_package(PNG REQUIRED)
 find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(Boost REQUIRED)
 find_package(nebula_core_common REQUIRED)
-
 
 add_library(nebula_core_decoders SHARED src/dummy.cpp)
 
@@ -15,45 +17,20 @@ target_include_directories(
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>)
 target_link_libraries(nebula_core_decoders PUBLIC PNG::PNG Eigen3::Eigen
-                                                  Boost::headers)
-ament_target_dependencies(nebula_core_decoders PUBLIC nebula_core_common)
+                                                  Boost::headers
+                                                  nebula_core_common)
 
 install(TARGETS nebula_core_decoders
-        EXPORT export_nebula_core_decoders
+        EXPORT ${PROJECT_NAME}Targets
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
         RUNTIME DESTINATION bin)
-install(DIRECTORY include/${PROJECT_NAME}/ DESTINATION include/${PROJECT_NAME})
+install(DIRECTORY include/ DESTINATION include)
 
-if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  ament_lint_auto_find_test_dependencies()
-
-  find_package(ament_cmake_gtest REQUIRED)
-
-  add_definitions(
-    -D_TEST_RESOURCES_PATH="${PROJECT_SOURCE_DIR}/test_resources/")
-
-  ament_add_gtest(test_downsample_mask
-                  tests/point_filters/test_downsample_mask.cpp)
-  target_include_directories(test_downsample_mask PRIVATE include)
-  target_link_libraries(test_downsample_mask nebula_core_decoders)
-
-  ament_add_gtest(test_scan_cutter tests/test_scan_cutter.cpp)
-  target_include_directories(test_scan_cutter PRIVATE include)
-  target_link_libraries(test_scan_cutter nebula_core_decoders)
-
-  ament_add_gtest(test_angles tests/test_angles.cpp)
-  target_include_directories(test_angles PRIVATE include)
-  target_link_libraries(test_angles nebula_core_decoders)
-
-  ament_add_gtest(test_core_interfaces tests/test_core_interfaces.cpp)
-  target_include_directories(test_core_interfaces PRIVATE include)
-  target_link_libraries(test_core_interfaces nebula_core_decoders)
+if(DEFINED ENV{AMENT_PREFIX_PATH})
+    ament_export_include_directories(include)
+    ament_export_targets(export_${PROJECT_NAME})
+    ament_export_dependencies(Boost nebula_core_common PNG Eigen3)
+    autoware_package()
+    ament_package()
 endif()
-
-ament_export_targets(export_nebula_core_decoders)
-ament_export_dependencies(Boost nebula_core_common PNG Eigen3)
-
-autoware_package()
-ament_package()

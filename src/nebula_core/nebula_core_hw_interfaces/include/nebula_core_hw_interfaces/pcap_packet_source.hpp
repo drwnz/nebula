@@ -20,6 +20,8 @@
 #include <string>
 #include <thread>
 #include <atomic>
+#include <map>
+#include <vector>
 
 namespace nebula::drivers
 {
@@ -38,10 +40,46 @@ public:
 private:
   void run();
 
+  struct ReassemblyKey
+  {
+    uint32_t src{};
+    uint32_t dst{};
+    uint16_t id{};
+    uint8_t protocol{};
+
+    bool operator<(const ReassemblyKey & other) const
+    {
+      if (src != other.src) return src < other.src;
+      if (dst != other.dst) return dst < other.dst;
+      if (id != other.id) return id < other.id;
+      return protocol < other.protocol;
+    }
+  };
+
+  struct FragmentAssembly
+  {
+    std::vector<uint8_t> data;
+    std::vector<bool> received;
+    size_t total_size{0};
+    bool saw_last{false};
+    uint64_t timestamp_ns{0};
+    uint16_t src_port{0};
+    uint16_t dst_port{0};
+    std::string src_ip;
+    std::string dst_ip;
+
+    bool is_complete() const {
+        return saw_last && total_size > 0 && 
+               data.size() >= total_size &&
+               std::all_of(received.begin(), received.begin() + total_size, [](bool v){return v;});
+    }
+  };
+
   std::string pcap_file_;
   SensorPacketCallback callback_;
   std::thread thread_;
   std::atomic<bool> running_{false};
+  std::map<ReassemblyKey, FragmentAssembly> assemblies_;
 };
 
 }  // namespace nebula::drivers
