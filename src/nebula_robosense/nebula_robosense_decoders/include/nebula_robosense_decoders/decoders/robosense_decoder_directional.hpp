@@ -81,6 +81,10 @@ protected:
 
   /// @brief The previous packet sequence number, used for frame boundary detection
   uint16_t prev_pkt_seq_{0};
+  uint16_t safe_seq_min_{0};
+  uint16_t safe_seq_max_{10};
+  uint16_t max_pkt_seq_{0};
+  bool seq_looped_{false};
 
   /// @brief Angle corrector
   std::shared_ptr<typename SensorT::angle_corrector_t> angle_corrector_;
@@ -118,8 +122,31 @@ protected:
   /// @return true if a new frame has started
   bool check_scan_completed(uint16_t current_pkt_seq)
   {
-    bool completed = (current_pkt_seq < prev_pkt_seq_) && (prev_pkt_seq_ > 0);
-    prev_pkt_seq_ = current_pkt_seq;
+    constexpr uint16_t safe_range = 10;
+
+    bool completed = false;
+
+    if (current_pkt_seq > max_pkt_seq_) {
+      max_pkt_seq_ = current_pkt_seq;
+    }
+
+    if (current_pkt_seq < safe_seq_min_) {
+      prev_pkt_seq_ = current_pkt_seq;
+      completed = true;
+      seq_looped_ = true;
+    } else if (current_pkt_seq < prev_pkt_seq_) {
+      // Ignore out-of-window reversals to match the vendor split strategy.
+    } else if (current_pkt_seq <= safe_seq_max_) {
+      prev_pkt_seq_ = current_pkt_seq;
+    } else {
+      if (prev_pkt_seq_ == 0) {
+        prev_pkt_seq_ = current_pkt_seq;
+      }
+    }
+
+    safe_seq_min_ = (prev_pkt_seq_ > safe_range) ? (prev_pkt_seq_ - safe_range) : 0;
+    safe_seq_max_ = prev_pkt_seq_ + safe_range;
+
     return completed;
   }
 

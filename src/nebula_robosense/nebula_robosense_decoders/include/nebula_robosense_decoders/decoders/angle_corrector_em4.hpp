@@ -56,8 +56,8 @@ public:
   CorrectedAngleData get_corrected_angle_data_em4(
     int16_t raw_yaw, uint32_t channel_id, uint8_t mirror_id)
   {
-    // yaw(j, i) = yaw_angle + HalfVcselYawOffset([i/20]+1)
-    // Note: manual says [i/20]+1 for 1-based indexing, we use 0-based.
+    // yaw(j, i) = yaw_angle + yaw_offset([i/20]+1)
+    // Note: vendor docs use 1-based indexing; this implementation uses 0-based indexing.
     size_t yaw_offset_idx = channel_id / 20;
     float yaw_rad = deg2rad(raw_yaw * 0.01f) + (yaw_offset_idx < half_vcsel_yaw_offset_rad_.size()
                                                   ? half_vcsel_yaw_offset_rad_[yaw_offset_idx]

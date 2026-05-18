@@ -35,7 +35,7 @@ constexpr uint8_t bpearl_v4_flag = 0x04;
 /// @brief struct for Robosense sensor configuration
 struct RobosenseSensorConfiguration : LidarConfigurationBase
 {
-  uint16_t gnss_port{};  // difop
+  uint16_t gnss_port{};  // info/difop
   double scan_phase{};   // start/end angle
   double dual_return_distance_threshold{};
 };
@@ -48,7 +48,7 @@ inline std::ostream & operator<<(std::ostream & os, RobosenseSensorConfiguration
 {
   os << "Robosense Sensor Configuration:" << '\n';
   os << (LidarConfigurationBase)(arg) << '\n';
-  os << "GNSS Port: " << arg.gnss_port << '\n';
+  os << "Info Port: " << arg.gnss_port << '\n';
   os << "Scan Phase: " << arg.scan_phase;
   return os;
 }
@@ -86,9 +86,20 @@ struct RobosenseCalibrationConfiguration : CalibrationConfigurationBase
   void set_channel_size(const size_t channel_num)
   {
     calibration.resize(channel_num);
+    if (channel_num == 192) {  // EMX
+      half_vcsel_yaw_offset.assign(24, 0);
+      pixel_pitch.resize(192);
+      for (size_t i = 0; i < pixel_pitch.size(); ++i) {
+        pixel_pitch[i] = static_cast<int16_t>(-4832 + static_cast<int>(i) * 42);
+      }
+      surface_pitch_offset.assign(2, 0);
+    }
     if (channel_num == 520) {  // EM4
-      half_vcsel_yaw_offset.assign(13, 0);
-      pixel_pitch.assign(520, 0);
+      half_vcsel_yaw_offset.assign(26, 0);
+      pixel_pitch.resize(520);
+      for (size_t i = 0; i < pixel_pitch.size(); ++i) {
+        pixel_pitch[i] = static_cast<int16_t>(-1300 + static_cast<int>(i) * 5);
+      }
       surface_pitch_offset.assign(4, 0);
     }
   }
