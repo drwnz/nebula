@@ -27,6 +27,21 @@ protected:
   robosense_packet::em4::CombinedInfo packet_{};
   rclcpp::Logger logger_;
 
+  template <typename PacketT>
+  void apply_calibration_packet(const PacketT & packet)
+  {
+    for (size_t i = 0; i < 26; ++i) {
+      packet_.yaw_offset[i] = packet.yaw_offset[i];
+    }
+    for (size_t i = 0; i < 520; ++i) {
+      packet_.pixel_pitch[i] = packet.pitch_angle[i].value();
+    }
+    for (size_t i = 0; i < 4; ++i) {
+      packet_.surface_pitch_offset[i] = packet.surface_pitch_offset[i].value();
+    }
+    packet_.calibration_received = true;
+  }
+
 public:
   RobosenseInfoDecoder() : logger_(rclcpp::get_logger("RobosenseInfoDecoderEM4"))
   {
@@ -35,13 +50,26 @@ public:
 
   bool parse_packet(const std::vector<uint8_t> & raw_packet) override
   {
-    if (raw_packet.size() == 1248) {  // DIFOP1
+    if (
+      raw_packet.size() == sizeof(robosense_packet::em4::InfoPacket) ||
+      raw_packet.size() == 1248) {
       std::memcpy(&packet_.packet1, raw_packet.data(), sizeof(robosense_packet::em4::InfoPacket));
       packet_.packet1_received = true;
       return true;
-    } else if (raw_packet.size() == 1162) {  // DIFOP2
-      std::memcpy(&packet_.packet2, raw_packet.data(), sizeof(robosense_packet::em4::InfoPacket2));
-      packet_.packet2_received = true;
+    } else if (raw_packet.size() == sizeof(robosense_packet::em4::InfoPacket2)) {
+      robosense_packet::em4::InfoPacket2 packet;
+      std::memcpy(&packet, raw_packet.data(), sizeof(packet));
+      apply_calibration_packet(packet);
+      return true;
+    } else if (raw_packet.size() == sizeof(robosense_packet::em4::InfoPacketCalibration)) {
+      robosense_packet::em4::InfoPacketCalibration packet;
+      std::memcpy(&packet, raw_packet.data(), sizeof(packet));
+      apply_calibration_packet(packet);
+      return true;
+    } else if (raw_packet.size() == sizeof(robosense_packet::em4::InfoPacketCalibration0624)) {
+      robosense_packet::em4::InfoPacketCalibration0624 packet;
+      std::memcpy(&packet, raw_packet.data(), sizeof(packet));
+      apply_calibration_packet(packet);
       return true;
     }
     return false;
@@ -76,15 +104,15 @@ public:
 
   bool parse_packet(const std::vector<uint8_t> & raw_packet) override
   {
-    if (raw_packet.size() == 654) {  // DIFOP1 (New)
+    if (raw_packet.size() == sizeof(robosense_packet::emx::InfoPacket)) {
       std::memcpy(&packet_.packet1, raw_packet.data(), sizeof(robosense_packet::emx::InfoPacket));
       packet_.packet1_received = true;
       return true;
-    } else if (raw_packet.size() == 500) {  // DIFOP2 (New)
+    } else if (raw_packet.size() == sizeof(robosense_packet::emx::InfoPacket2)) {
       std::memcpy(&packet_.packet2, raw_packet.data(), sizeof(robosense_packet::emx::InfoPacket2));
       packet_.packet2_received = true;
       return true;
-    } else if (raw_packet.size() == 256) {  // Standard DIFOP
+    } else if (raw_packet.size() == sizeof(robosense_packet::emx::InfoPacket256)) {
       std::memcpy(
         &packet_.packet256, raw_packet.data(), sizeof(robosense_packet::emx::InfoPacket256));
       packet_.packet256_received = true;

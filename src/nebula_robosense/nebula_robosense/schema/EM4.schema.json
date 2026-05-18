@@ -15,8 +15,12 @@
                 "data_port": {
                     "$ref": "../../../nebula_core/nebula_core_ros/schema/communication.json#/definitions/data_port"
                 },
-                "gnss_port": {
-                    "$ref": "../../../nebula_core/nebula_core_ros/schema/communication.json#/definitions/gnss_port"
+                "info_port": {
+                    "type": "integer",
+                    "default": "7788",
+                    "minimum": 0,
+                    "readOnly": true,
+                    "description": "Sensor info/DIFOP port."
                 },
                 "packet_mtu_size": {
                     "$ref": "../../../nebula_core/nebula_core_ros/schema/communication.json#/definitions/packet_mtu_size"
@@ -56,7 +60,7 @@
                 "host_ip",
                 "sensor_ip",
                 "data_port",
-                "gnss_port",
+                "info_port",
                 "packet_mtu_size",
                 "launch_hw",
                 "setup_sensor",

@@ -54,11 +54,11 @@ public:
     }
 
     if (use_default_pitch) {
-      // Manual specified Vertical FOV 20° (-12° ~ +8°), Resolution 0.1°
-      // If Channel 0 is top, it should be +800 and decrease.
-      // START_ANGLE = 800, STEP = -10 (0.01 deg units)
+      // Match the vendor EMX fallback table:
+      // START_ANGLE = -24.16 deg, STEP = 0.21 deg.
+      // Our stored pitch values use the raw DIFOP units, so convert the vendor table accordingly.
       for (int i = 0; i < 192; ++i) {
-        float pitch_deg = static_cast<float>(800 - i * 10) / 100.0f;
+        float pitch_deg = static_cast<float>(-4832 + i * 42) / 200.0f;
         pixel_pitch_rad_.push_back(deg2rad(pitch_deg));
       }
     } else {

@@ -172,8 +172,37 @@ struct InfoPacket2
   big_uint8_buf_t surface_cnt;
   big_uint8_buf_t half_vcsel_pixel_cnt;
   big_uint8_buf_t half_vcsel_cnt;
-  big_int16_buf_t half_vcsel_yaw_offset[13];
-  big_int16_buf_t pixel_pitch[520];
+  int8_t yaw_offset[26];
+  big_int16_buf_t pitch_angle[520];
+  big_int16_buf_t surface_pitch_offset[4];
+  big_int16_buf_t roll_offset;
+  uint8_t reserved_1[4];
+  big_uint16_buf_t e2e_data_length;
+  big_uint16_buf_t e2e_counter;
+  big_uint32_buf_t e2e_data_id;
+  big_uint32_buf_t e2e_crc32;
+};
+
+struct InfoPacketCalibration
+{
+  uint8_t id[8];
+  uint8_t reserved_0[106];
+  int8_t yaw_offset[26];
+  big_int16_buf_t pitch_angle[520];
+  big_int16_buf_t surface_pitch_offset[4];
+  uint8_t reserved_1[110];
+  big_uint16_buf_t e2e_data_length;
+  big_uint16_buf_t e2e_counter;
+  big_uint32_buf_t e2e_data_id;
+  big_uint32_buf_t e2e_crc32;
+};
+
+struct InfoPacketCalibration0624
+{
+  uint8_t id[4];
+  uint8_t reserved_0[306];
+  int8_t yaw_offset[26];
+  big_int16_buf_t pitch_angle[520];
   big_int16_buf_t surface_pitch_offset[4];
   uint8_t reserved_1[6];
   big_uint16_buf_t e2e_data_length;
@@ -185,12 +214,19 @@ struct InfoPacket2
 struct CombinedInfo
 {
   InfoPacket packet1;
-  InfoPacket2 packet2;
   bool packet1_received{false};
-  bool packet2_received{false};
+  bool calibration_received{false};
+  int16_t yaw_offset[26]{};
+  int16_t pixel_pitch[520]{};
+  int16_t surface_pitch_offset[4]{};
 };
 
 #pragma pack(pop)
+
+static_assert(sizeof(InfoPacket) == 256);
+static_assert(sizeof(InfoPacket2) == 1162);
+static_assert(sizeof(InfoPacketCalibration) == 1310);
+static_assert(sizeof(InfoPacketCalibration0624) == 1402);
 }  // namespace robosense_packet::em4
 
 class EM4 : public RobosenseSensorDirectional<
@@ -218,15 +254,15 @@ public:
   {
     RobosenseCalibrationConfiguration calib;
     calib.set_channel_size(520);
-    if (info.packet2_received) {
-      for (size_t i = 0; i < 13; ++i) {
-        calib.half_vcsel_yaw_offset[i] = info.packet2.half_vcsel_yaw_offset[i].value();
+    if (info.calibration_received) {
+      for (size_t i = 0; i < 26; ++i) {
+        calib.half_vcsel_yaw_offset[i] = info.yaw_offset[i];
       }
       for (size_t i = 0; i < 520; ++i) {
-        calib.pixel_pitch[i] = info.packet2.pixel_pitch[i].value();
+        calib.pixel_pitch[i] = info.pixel_pitch[i];
       }
       for (size_t i = 0; i < 4; ++i) {
-        calib.surface_pitch_offset[i] = info.packet2.surface_pitch_offset[i].value();
+        calib.surface_pitch_offset[i] = info.surface_pitch_offset[i];
       }
     }
     return calib;

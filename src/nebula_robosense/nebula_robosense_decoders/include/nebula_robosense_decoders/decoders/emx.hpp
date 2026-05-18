@@ -188,6 +188,10 @@ struct CombinedInfo
 };
 
 #pragma pack(pop)
+
+static_assert(sizeof(InfoPacket) == 658);
+static_assert(sizeof(InfoPacket2) == 500);
+static_assert(sizeof(InfoPacket256) == 256);
 }  // namespace robosense_packet::emx
 
 namespace robosense_packet
@@ -244,6 +248,9 @@ public:
     calib.surface_pitch_offset.assign(2, 0);
 
     if (info.packet1_received) {
+      for (size_t i = 0; i < calib.half_vcsel_yaw_offset.size() && i < 24; ++i) {
+        calib.half_vcsel_yaw_offset[i] = info.packet1.yaw_offset[i];
+      }
       for (size_t i = 0; i < 192; ++i) {
         calib.pixel_pitch[i] = info.packet1.pitch_angle[i].value();
       }
@@ -252,9 +259,17 @@ public:
       for (size_t i = 0; i < 24; ++i) {
         calib.half_vcsel_yaw_offset[i] = info.packet2.yaw_offset[i];
       }
+      for (size_t i = 0; i < 192; ++i) {
+        calib.pixel_pitch[i] = info.packet2.pitch_angle[i].value();
+      }
       for (size_t i = 0; i < 2; ++i) {
         calib.surface_pitch_offset[i] = info.packet2.surface_pitch_offset[i].value();
       }
+    } else {
+      // DIFOP2 carries the surface pitch offsets used by the vendor EMX decoder.
+      // Leave this empty until packet2 arrives so callers can distinguish partial
+      // packet1-only calibration from the full EMX calibration set.
+      calib.surface_pitch_offset.clear();
     }
     return calib;
   }
@@ -293,9 +308,12 @@ public:
     ::nebula::drivers::NebulaPoint & point, const robosense_packet::emx::Packet & pkt,
     uint32_t block_id, uint32_t /*channel_id*/, CorrectorT & angle_corrector)
   {
+    // Match the vendor EMX decoder: apply the DIFOP2 surface pitch offset directly
+    // from the packet surface_id without remapping.
     uint8_t surface_id = pkt.header.surface_id.value();
-    uint8_t mirror_id = (surface_id >= 2) ? (surface_id - 1) : surface_id;
-    if (mirror_id > 1) mirror_id = 0;
+    if (surface_id > 1) {
+      surface_id = 0;
+    }
 
     int16_t raw_yaw = pkt.header.yaw_angle.value();
 
@@ -313,7 +331,7 @@ public:
     }
 
     auto corrected_data =
-      angle_corrector.get_corrected_angle_data_emx(raw_yaw, real_chan, mirror_id);
+      angle_corrector.get_corrected_angle_data_emx(raw_yaw, real_chan, surface_id);
     populate_point_from_corrected_angle(point, corrected_data, static_cast<uint16_t>(real_chan));
   }
 };

@@ -23,6 +23,25 @@
 
 namespace nebula::ros
 {
+namespace
+{
+bool directional_calibration_ready(
+  nebula::drivers::SensorModel sensor_model,
+  const nebula::drivers::RobosenseCalibrationConfiguration & calibration)
+{
+  if (sensor_model == nebula::drivers::SensorModel::ROBOSENSE_EMX) {
+    return calibration.pixel_pitch.size() == 192 && calibration.surface_pitch_offset.size() == 2;
+  }
+  if (sensor_model == nebula::drivers::SensorModel::ROBOSENSE_EM4) {
+    return calibration.pixel_pitch.size() == 520;
+  }
+  if (sensor_model == nebula::drivers::SensorModel::ROBOSENSE_E1) {
+    return true;
+  }
+  return true;
+}
+}  // namespace
+
 std::shared_ptr<const nebula::drivers::RobosenseCalibrationConfiguration>
 RobosenseRosWrapper::make_default_directional_calibration() const
 {
@@ -125,7 +144,8 @@ nebula::Status RobosenseRosWrapper::declare_and_get_sensor_config_params()
   config.host_ip = declare_parameter<std::string>("host_ip", param_read_only());
   config.sensor_ip = declare_parameter<std::string>("sensor_ip", param_read_only());
   config.data_port = declare_parameter<uint16_t>("data_port", param_read_only());
-  config.gnss_port = declare_parameter<uint16_t>("gnss_port", param_read_only());
+  const auto legacy_info_port = declare_parameter<uint16_t>("gnss_port", 7788, param_read_only());
+  config.gnss_port = declare_parameter<uint16_t>("info_port", legacy_info_port, param_read_only());
   config.frame_id = declare_parameter<std::string>("frame_id", param_read_write());
 
   // scan_phase is only relevant for mechanical sensors that use angle-based frame splitting.
@@ -239,6 +259,9 @@ void RobosenseRosWrapper::receive_info_packet_callback(std::vector<uint8_t> & pa
     new_cfg.use_sensor_time = info_driver_->get_sync_status();
 
     auto calib = info_driver_->get_sensor_calibration();
+    if (!directional_calibration_ready(sensor_cfg_ptr_->sensor_model, calib)) {
+      return;
+    }
     calib.create_corrected_channels();
 
     auto new_cfg_ptr =
@@ -267,6 +290,9 @@ void RobosenseRosWrapper::receive_info_packet_callback(std::vector<uint8_t> & pa
     new_cfg.use_sensor_time = info_driver_->get_sync_status();
 
     auto calib = info_driver_->get_sensor_calibration();
+    if (!directional_calibration_ready(sensor_cfg_ptr_->sensor_model, calib)) {
+      return;
+    }
     calib.create_corrected_channels();
 
     auto new_cfg_ptr =
@@ -327,7 +353,7 @@ void RobosenseRosWrapper::receive_info_packet_callback(std::vector<uint8_t> & pa
       check_field("sensor_ip", new_cfg.sensor_ip, "sensor_ip");
       check_field("dest_ip", new_cfg.host_ip, "host_ip");
       check_field("msop_dst_port", std::to_string(new_cfg.data_port), "data_port");
-      check_field("difop_dst_port", std::to_string(new_cfg.gnss_port), "gnss_port");
+      check_field("difop_dst_port", std::to_string(new_cfg.gnss_port), "info_port");
 
       if (!warnings.empty()) {
         warned_network_mismatch = true;
