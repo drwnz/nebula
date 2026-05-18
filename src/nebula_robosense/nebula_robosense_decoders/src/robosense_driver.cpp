@@ -17,11 +17,46 @@
 
 namespace nebula::drivers
 {
+namespace
+{
+std::shared_ptr<const RobosenseCalibrationConfiguration> normalize_calibration_configuration(
+  const std::shared_ptr<const RobosenseSensorConfiguration> & sensor_configuration,
+  const std::shared_ptr<const RobosenseCalibrationConfiguration> & calibration_configuration)
+{
+  const auto expected_pitch_count = [&]() -> size_t {
+    switch (sensor_configuration->sensor_model) {
+      case SensorModel::ROBOSENSE_EMX:
+        return 192;
+      case SensorModel::ROBOSENSE_EM4:
+        return 520;
+      default:
+        return 0;
+    }
+  }();
+
+  if (expected_pitch_count == 0) {
+    return calibration_configuration;
+  }
+
+  if (
+    calibration_configuration &&
+    calibration_configuration->pixel_pitch.size() == expected_pitch_count) {
+    return calibration_configuration;
+  }
+
+  auto fallback = std::make_shared<RobosenseCalibrationConfiguration>();
+  fallback->set_channel_size(expected_pitch_count);
+  return fallback;
+}
+}  // namespace
 
 RobosenseDriver::RobosenseDriver(
   const std::shared_ptr<const RobosenseSensorConfiguration> & sensor_configuration,
   const std::shared_ptr<const RobosenseCalibrationConfiguration> & calibration_configuration)
 {
+  const auto normalized_calibration =
+    normalize_calibration_configuration(sensor_configuration, calibration_configuration);
+
   // Initialize proper parser from cloud config's model and echo mode
   driver_status_ = ::nebula::Status::OK;
   switch (sensor_configuration->sensor_model) {
@@ -30,27 +65,27 @@ RobosenseDriver::RobosenseDriver(
       break;
     case SensorModel::ROBOSENSE_BPEARL_V3:
       scan_decoder_.reset(
-        new RobosenseDecoder<BpearlV3>(sensor_configuration, calibration_configuration));
+        new RobosenseDecoder<BpearlV3>(sensor_configuration, normalized_calibration));
       break;
     case SensorModel::ROBOSENSE_BPEARL_V4:
       scan_decoder_.reset(
-        new RobosenseDecoder<BpearlV4>(sensor_configuration, calibration_configuration));
+        new RobosenseDecoder<BpearlV4>(sensor_configuration, normalized_calibration));
       break;
     case SensorModel::ROBOSENSE_HELIOS:
       scan_decoder_.reset(
-        new RobosenseDecoder<Helios>(sensor_configuration, calibration_configuration));
+        new RobosenseDecoder<Helios>(sensor_configuration, normalized_calibration));
       break;
     case SensorModel::ROBOSENSE_E1:
       scan_decoder_.reset(
-        new RobosenseDecoderDirectional<E1>(sensor_configuration, calibration_configuration));
+        new RobosenseDecoderDirectional<E1>(sensor_configuration, normalized_calibration));
       break;
     case SensorModel::ROBOSENSE_EM4:
       scan_decoder_.reset(
-        new RobosenseDecoderDirectional<EM4>(sensor_configuration, calibration_configuration));
+        new RobosenseDecoderDirectional<EM4>(sensor_configuration, normalized_calibration));
       break;
     case SensorModel::ROBOSENSE_EMX:
       scan_decoder_.reset(
-        new RobosenseDecoderDirectional<EMX>(sensor_configuration, calibration_configuration));
+        new RobosenseDecoderDirectional<EMX>(sensor_configuration, normalized_calibration));
       break;
     default:
       driver_status_ = ::nebula::Status::NOT_INITIALIZED;

@@ -40,8 +40,13 @@ private:
   SensorProgressCallback progress_callback_;
   SensorProgress progress_;
   SensorConfiguration config_;
+  bool using_default_directional_calibration_{false};
 
   void on_pointcloud(const NebulaPointCloudPtr & pointcloud, double timestamp_s);
+  [[nodiscard]] bool is_directional_sensor() const;
+  void rebuild_driver_with_current_config(
+    const std::shared_ptr<const RobosenseCalibrationConfiguration> & calibration);
+  void apply_info_calibration_if_available();
 };
 
 class RobosenseSensorPlugin : public SensorPlugin
