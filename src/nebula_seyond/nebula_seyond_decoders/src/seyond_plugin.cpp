@@ -15,6 +15,7 @@
 #include <nebula_seyond_decoders/seyond_plugin.hpp>
 
 #include <iostream>
+#include <stdexcept>
 
 namespace nebula::drivers
 {
@@ -26,13 +27,13 @@ SeyondSensorDecoderRuntime::SeyondSensorDecoderRuntime()
 void SeyondSensorDecoderRuntime::configure(const SensorConfiguration & config)
 {
   config_ = config;
-  
+
   SeyondSensorConfiguration s_config;
   s_config.connection.host_ip = config.host_ip;
   s_config.connection.sensor_ip = config.sensor_ip;
   s_config.connection.udp_port = config.data_port;
   s_config.frame_id = config.frame_id;
-  
+
   // Use expanded config fields
   s_config.fov.azimuth.start = config.fov.azimuth.start;
   s_config.fov.azimuth.end = config.fov.azimuth.end;
@@ -40,17 +41,39 @@ void SeyondSensorDecoderRuntime::configure(const SensorConfiguration & config)
   s_config.fov.elevation.end = config.fov.elevation.end;
 
   switch (config.sensor_model) {
-      case SensorModel::SEYOND_FALCON_K: s_config.sensor_model = SeyondSensorModel::FALCON_K; break;
-      case SensorModel::SEYOND_ROBIN_W: s_config.sensor_model = SeyondSensorModel::ROBIN_W; break;
-      case SensorModel::SEYOND_ROBIN_E1X: s_config.sensor_model = SeyondSensorModel::ROBIN_E1X; break;
-      case SensorModel::SEYOND_HUMMINGBIRD_D1: s_config.sensor_model = SeyondSensorModel::HUMMINGBIRD_D1; break;
-      default: throw std::runtime_error("Unsupported Seyond model");
+    case SensorModel::SEYOND_FALCON_K:
+      s_config.sensor_model = SeyondSensorModel::FALCON_K;
+      break;
+    case SensorModel::SEYOND_ROBIN_W:
+      s_config.sensor_model = SeyondSensorModel::ROBIN_W;
+      break;
+    case SensorModel::SEYOND_ROBIN_E1X:
+      s_config.sensor_model = SeyondSensorModel::ROBIN_E1X;
+      break;
+    case SensorModel::SEYOND_HUMMINGBIRD_D1:
+      s_config.sensor_model = SeyondSensorModel::HUMMINGBIRD_D1;
+      break;
+    default:
+      throw std::runtime_error("Unsupported Seyond model");
+  }
+
+  SeyondCalibrationData calibration{};
+  if (!config.calibration_file.empty()) {
+    auto calibration_or_error = SeyondCalibrationData::load_from_file(config.calibration_file);
+    if (!calibration_or_error.has_value()) {
+      throw std::runtime_error(
+        "Failed to load Seyond calibration file '" + config.calibration_file +
+        "': " + calibration_or_error.error().message);
+    }
+    calibration = calibration_or_error.value();
   }
 
   decoder_ = std::make_unique<SeyondDecoder>(
     s_config,
-    std::bind(&SeyondSensorDecoderRuntime::on_pointcloud, this, std::placeholders::_1, std::placeholders::_2)
-  );
+    std::bind(
+      &SeyondSensorDecoderRuntime::on_pointcloud, this, std::placeholders::_1,
+      std::placeholders::_2),
+    calibration);
 }
 
 void SeyondSensorDecoderRuntime::set_output_callback(SensorOutputCallback callback)
@@ -76,11 +99,12 @@ SensorPacketResult SeyondSensorDecoderRuntime::process_packet(const SensorPacket
 
   progress_.processed_packets++;
 
-  if (packet.channel == SensorPacketChannel::Data || packet.channel == SensorPacketChannel::Unknown) {
+  if (
+    packet.channel == SensorPacketChannel::Data || packet.channel == SensorPacketChannel::Unknown) {
     progress_.matched_packets++;
-    
+
     [[maybe_unused]] auto result = decoder_->unpack(packet.payload);
-    
+
     progress_.decoded_packets++;
 
     if (progress_callback_) progress_callback_(progress_);
@@ -96,7 +120,8 @@ void SeyondSensorDecoderRuntime::flush()
 {
 }
 
-void SeyondSensorDecoderRuntime::on_pointcloud(NebulaPointCloudPtr pointcloud, uint64_t timestamp_ns)
+void SeyondSensorDecoderRuntime::on_pointcloud(
+  NebulaPointCloudPtr pointcloud, uint64_t timestamp_ns)
 {
   progress_.output_count++;
   if (output_callback_) {
@@ -116,11 +141,8 @@ SensorPluginMetadata SeyondSensorPlugin::metadata() const
   md.package_name = "nebula_seyond_decoders";
   md.library_path = "libnebula_seyond_decoders_plugin.so";
   md.supported_models = {
-    SensorModel::SEYOND_FALCON_K,
-    SensorModel::SEYOND_ROBIN_W,
-    SensorModel::SEYOND_ROBIN_E1X,
-    SensorModel::SEYOND_HUMMINGBIRD_D1
-  };
+    SensorModel::SEYOND_FALCON_K, SensorModel::SEYOND_ROBIN_W, SensorModel::SEYOND_ROBIN_E1X,
+    SensorModel::SEYOND_HUMMINGBIRD_D1};
   return md;
 }
 
@@ -130,11 +152,11 @@ std::vector<SensorModelInfo> SeyondSensorPlugin::supported_models() const
     {SensorModel::SEYOND_FALCON_K, "FalconK", "Seyond Falcon K"},
     {SensorModel::SEYOND_ROBIN_W, "RobinW", "Seyond Robin W"},
     {SensorModel::SEYOND_ROBIN_E1X, "RobinE1X", "Seyond Robin E1X"},
-    {SensorModel::SEYOND_HUMMINGBIRD_D1, "HummingbirdD1", "Seyond Hummingbird D1"}
-  };
+    {SensorModel::SEYOND_HUMMINGBIRD_D1, "HummingbirdD1", "Seyond Hummingbird D1"}};
 }
 
-std::vector<PacketChannelRequirement> SeyondSensorPlugin::packet_requirements(const SensorConfiguration & config) const
+std::vector<PacketChannelRequirement> SeyondSensorPlugin::packet_requirements(
+  const SensorConfiguration & config) const
 {
   PacketChannelRequirement req;
   req.transport = SensorTransportKind::UDP;
@@ -144,7 +166,8 @@ std::vector<PacketChannelRequirement> SeyondSensorPlugin::packet_requirements(co
   return {req};
 }
 
-std::vector<LiveTransportRequirement> SeyondSensorPlugin::live_transport_requirements(const SensorConfiguration & config) const
+std::vector<LiveTransportRequirement> SeyondSensorPlugin::live_transport_requirements(
+  const SensorConfiguration & config) const
 {
   LiveTransportRequirement req;
   req.transport = SensorTransportKind::UDP;
