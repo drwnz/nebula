@@ -17,6 +17,7 @@
   <depend>nebula_core_decoders</depend>
   <depend>nebula_robosense_common</depend>
   <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

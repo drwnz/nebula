@@ -3,6 +3,7 @@ project(nebula_robosense_decoders)
 
 find_package(autoware_cmake REQUIRED)
 find_package(Boost REQUIRED)
+find_package(sensor_msgs REQUIRED)
 autoware_package()
 
 # Robosense Decoder
@@ -20,6 +21,8 @@ target_link_libraries(
          nebula_core_decoders::nebula_core_decoders rclcpp::rclcpp
          Boost::headers)
 
+ament_target_dependencies(nebula_robosense_decoders PUBLIC sensor_msgs)
+
 # Robosense Info Decoder
 add_library(
   nebula_robosense_decoders_info SHARED
@@ -36,6 +39,8 @@ target_link_libraries(
          nebula_robosense_common::nebula_robosense_common
          nebula_core_decoders::nebula_core_decoders rclcpp::rclcpp
          Boost::headers)
+
+ament_target_dependencies(nebula_robosense_decoders_info PUBLIC sensor_msgs)
 
 install(TARGETS nebula_robosense_decoders
         EXPORT export_nebula_robosense_decoders)
@@ -55,6 +60,6 @@ ament_export_targets(export_nebula_robosense_decoders)
 ament_export_targets(export_nebula_robosense_decoders_info)
 
 ament_export_dependencies(Boost nebula_core_common nebula_robosense_common
-                          nebula_core_decoders rclcpp)
+                          nebula_core_decoders rclcpp sensor_msgs)
 
 ament_package()
