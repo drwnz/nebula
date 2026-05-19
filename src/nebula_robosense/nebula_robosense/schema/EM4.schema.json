@@ -22,6 +22,14 @@
                     "readOnly": true,
                     "description": "Sensor info/DIFOP port."
                 },
+                "difop2_port": {
+                    "type": "integer",
+                    "default": "7788",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "readOnly": true,
+                    "description": "Secondary EM4 DIFOP port used for calibration packets."
+                },
                 "packet_mtu_size": {
                     "$ref": "../../../nebula_core/nebula_core_ros/schema/communication.json#/definitions/packet_mtu_size"
                 },
@@ -61,6 +69,7 @@
                 "sensor_ip",
                 "data_port",
                 "info_port",
+                "difop2_port",
                 "packet_mtu_size",
                 "launch_hw",
                 "setup_sensor",

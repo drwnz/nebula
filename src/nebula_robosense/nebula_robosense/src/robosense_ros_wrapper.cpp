@@ -56,7 +56,8 @@ RobosenseRosWrapper::make_default_directional_calibration() const
     calib.set_channel_size(128);
   }
 
-  return std::make_shared<const nebula::drivers::RobosenseCalibrationConfiguration>(std::move(calib));
+  return std::make_shared<const nebula::drivers::RobosenseCalibrationConfiguration>(
+    std::move(calib));
 }
 
 RobosenseRosWrapper::RobosenseRosWrapper(const rclcpp::NodeOptions & options)
@@ -94,7 +95,8 @@ RobosenseRosWrapper::RobosenseRosWrapper(const rclcpp::NodeOptions & options)
       sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_EM4 ||
       sensor_cfg_ptr_->sensor_model == drivers::SensorModel::ROBOSENSE_EMX) {
       decoder_wrapper_.emplace(
-        this, hw_interface_wrapper_->hw_interface(), sensor_cfg_ptr_, make_default_directional_calibration());
+        this, hw_interface_wrapper_->hw_interface(), sensor_cfg_ptr_,
+        make_default_directional_calibration());
       using_default_directional_calibration_ = true;
       RCLCPP_INFO_STREAM(
         get_logger(), "Initialized decoder wrapper with default directional calibration: "
@@ -120,7 +122,8 @@ RobosenseRosWrapper::RobosenseRosWrapper(const rclcpp::NodeOptions & options)
                       << packets_sub_->get_topic_name() << " and "
                       << info_packets_sub_->get_topic_name());
 
-    decoder_wrapper_.emplace(this, nullptr, sensor_cfg_ptr_, make_default_directional_calibration());
+    decoder_wrapper_.emplace(
+      this, nullptr, sensor_cfg_ptr_, make_default_directional_calibration());
     RCLCPP_INFO_STREAM(
       get_logger(), "Initialized decoder wrapper for replay: " << decoder_wrapper_->status());
   }
@@ -146,6 +149,12 @@ nebula::Status RobosenseRosWrapper::declare_and_get_sensor_config_params()
   config.data_port = declare_parameter<uint16_t>("data_port", param_read_only());
   const auto legacy_info_port = declare_parameter<uint16_t>("gnss_port", 7788, param_read_only());
   config.gnss_port = declare_parameter<uint16_t>("info_port", legacy_info_port, param_read_only());
+  if (
+    config.sensor_model == drivers::SensorModel::ROBOSENSE_EM4 ||
+    config.sensor_model == drivers::SensorModel::ROBOSENSE_EMX) {
+    config.difop2_port =
+      declare_parameter<uint16_t>("difop2_port", config.gnss_port, param_read_only());
+  }
   config.frame_id = declare_parameter<std::string>("frame_id", param_read_write());
 
   // scan_phase is only relevant for mechanical sensors that use angle-based frame splitting.
@@ -181,6 +190,12 @@ Status RobosenseRosWrapper::validate_and_set_config(
     return Status::INVALID_ECHO_MODE;
   }
   if (new_config->frame_id.empty()) {
+    return Status::SENSOR_CONFIG_ERROR;
+  }
+  if (
+    (new_config->sensor_model == nebula::drivers::SensorModel::ROBOSENSE_EM4 ||
+     new_config->sensor_model == nebula::drivers::SensorModel::ROBOSENSE_EMX) &&
+    new_config->difop2_port == 0) {
     return Status::SENSOR_CONFIG_ERROR;
   }
 
@@ -269,15 +284,15 @@ void RobosenseRosWrapper::receive_info_packet_callback(std::vector<uint8_t> & pa
     status = validate_and_set_config(new_cfg_ptr);
 
     if (status == nebula::Status::OK) {
-      auto calib_ptr =
-        std::make_shared<const nebula::drivers::RobosenseCalibrationConfiguration>(std::move(calib));
+      auto calib_ptr = std::make_shared<const nebula::drivers::RobosenseCalibrationConfiguration>(
+        std::move(calib));
       decoder_wrapper_.emplace(
         this, hw_interface_wrapper_ ? hw_interface_wrapper_->hw_interface() : nullptr,
         sensor_cfg_ptr_, calib_ptr);
       using_default_directional_calibration_ = false;
       RCLCPP_INFO_STREAM(
-        get_logger(), "Updated decoder wrapper from sensor info packets: "
-                        << decoder_wrapper_->status());
+        get_logger(),
+        "Updated decoder wrapper from sensor info packets: " << decoder_wrapper_->status());
     }
   }
 
@@ -354,6 +369,7 @@ void RobosenseRosWrapper::receive_info_packet_callback(std::vector<uint8_t> & pa
       check_field("dest_ip", new_cfg.host_ip, "host_ip");
       check_field("msop_dst_port", std::to_string(new_cfg.data_port), "data_port");
       check_field("difop_dst_port", std::to_string(new_cfg.gnss_port), "info_port");
+      check_field("difop2_dst_port", std::to_string(new_cfg.difop2_port), "difop2_port");
 
       if (!warnings.empty()) {
         warned_network_mismatch = true;

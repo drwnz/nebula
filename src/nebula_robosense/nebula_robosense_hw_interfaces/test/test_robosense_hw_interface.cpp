@@ -115,7 +115,7 @@ TEST_F(TestRobosenseHwInterface, TestSensorPacketCallback)
 
   setup_mock_sender(config_->data_port, config_->data_port);
 
-  for (int i = 0; i < 5; ++i) {
+  for (int i = 0; i < 50; ++i) {
     send_mock_payload();
     std::this_thread::sleep_for(10ms);
     if (callback_triggered) break;
@@ -136,7 +136,31 @@ TEST_F(TestRobosenseHwInterface, TestInfoPacketCallback)
 
   setup_mock_sender(config_->gnss_port, config_->gnss_port);
 
-  for (int i = 0; i < 5; ++i) {
+  for (int i = 0; i < 50; ++i) {
+    send_mock_payload();
+    std::this_thread::sleep_for(10ms);
+    if (callback_triggered) break;
+  }
+
+  EXPECT_TRUE(callback_triggered);
+  if (mock_fd_ != -1) close(mock_fd_);
+}
+
+TEST_F(TestRobosenseHwInterface, TestDifop2PacketCallback)
+{
+  config_->sensor_model = nebula::drivers::SensorModel::ROBOSENSE_EMX;
+  config_->difop2_port = 7789;
+  ASSERT_EQ(hw_interface_->set_sensor_configuration(config_), nebula::Status::OK);
+  EXPECT_EQ(hw_interface_->info_interface_start(), nebula::Status::OK);
+
+  std::atomic_bool callback_triggered{false};
+  hw_interface_->register_info_callback([&](std::vector<uint8_t> & buffer) {
+    if (buffer.size() > 0) callback_triggered = true;
+  });
+
+  setup_mock_sender(config_->difop2_port, config_->difop2_port);
+
+  for (int i = 0; i < 50; ++i) {
     send_mock_payload();
     std::this_thread::sleep_for(10ms);
     if (callback_triggered) break;
