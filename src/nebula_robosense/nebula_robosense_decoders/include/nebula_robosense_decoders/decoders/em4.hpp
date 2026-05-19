@@ -299,6 +299,7 @@ public:
     sensor_info["dest_ip"] = packet1.msop_dst_ip.to_string();
     sensor_info["msop_dst_port"] = std::to_string(packet1.msop_dst_port.value());
     sensor_info["difop_dst_port"] = std::to_string(packet1.difop1_dst_port.value());
+    sensor_info["difop2_dst_port"] = std::to_string(packet1.difop2_dst_port.value());
     return sensor_info;
   }
 

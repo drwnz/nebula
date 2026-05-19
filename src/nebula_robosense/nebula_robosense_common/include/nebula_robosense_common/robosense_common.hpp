@@ -36,7 +36,8 @@ constexpr uint8_t bpearl_v4_flag = 0x04;
 struct RobosenseSensorConfiguration : LidarConfigurationBase
 {
   uint16_t gnss_port{};  // info/difop
-  double scan_phase{};   // start/end angle
+  uint16_t difop2_port{};
+  double scan_phase{};  // start/end angle
   double dual_return_distance_threshold{};
 };
 
@@ -49,6 +50,7 @@ inline std::ostream & operator<<(std::ostream & os, RobosenseSensorConfiguration
   os << "Robosense Sensor Configuration:" << '\n';
   os << (LidarConfigurationBase)(arg) << '\n';
   os << "Info Port: " << arg.gnss_port << '\n';
+  os << "DIFOP2 Port: " << arg.difop2_port << '\n';
   os << "Scan Phase: " << arg.scan_phase;
   return os;
 }

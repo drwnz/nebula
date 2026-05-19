@@ -64,20 +64,20 @@ Status RobosenseHwInterface::sensor_interface_start()
   return Status::OK;
 }
 
-Status RobosenseHwInterface::info_interface_start()
+Status RobosenseHwInterface::start_info_socket(
+  std::unique_ptr<connections::UdpSocket> & socket, uint16_t port, const std::string & label)
 {
   try {
     logger_->info(
-      "Starting UDP server for info packets on: " + sensor_configuration_->sensor_ip + ": " +
-      std::to_string(sensor_configuration_->gnss_port));
+      "Starting UDP server for " + label + " packets on: " + sensor_configuration_->sensor_ip +
+      ": " + std::to_string(port));
 
-    info_udp_socket_ = std::make_unique<connections::UdpSocket>(
-      connections::UdpSocket::Builder(
-        sensor_configuration_->host_ip, sensor_configuration_->gnss_port)
-        .limit_to_sender(sensor_configuration_->sensor_ip, sensor_configuration_->gnss_port)
+    socket = std::make_unique<connections::UdpSocket>(
+      connections::UdpSocket::Builder(sensor_configuration_->host_ip, port)
+        .limit_to_sender(sensor_configuration_->sensor_ip, port)
         .bind());
 
-    info_udp_socket_->subscribe(
+    socket->subscribe(
       [this](std::vector<uint8_t> & buffer, const connections::UdpSocket::RxMetadata &) {
         this->receive_info_packet_callback(buffer);
       });
@@ -85,8 +85,25 @@ Status RobosenseHwInterface::info_interface_start()
     Status status = Status::UDP_CONNECTION_ERROR;
     logger_->error(
       util::to_string(status) + " " + sensor_configuration_->sensor_ip + "," +
-      std::to_string(sensor_configuration_->gnss_port) + ": " + ex.what());
+      std::to_string(port) + ": " + ex.what());
     return status;
+  }
+
+  return Status::OK;
+}
+
+Status RobosenseHwInterface::info_interface_start()
+{
+  const auto primary_status =
+    start_info_socket(info_udp_socket_, sensor_configuration_->gnss_port, "info/DIFOP");
+  if (primary_status != Status::OK) {
+    return primary_status;
+  }
+
+  if (
+    sensor_configuration_->difop2_port != 0 &&
+    sensor_configuration_->difop2_port != sensor_configuration_->gnss_port) {
+    return start_info_socket(difop2_udp_socket_, sensor_configuration_->difop2_port, "DIFOP2");
   }
 
   return Status::OK;

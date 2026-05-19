@@ -44,12 +44,21 @@ class RobosenseHwInterface
 private:
   std::unique_ptr<connections::UdpSocket> cloud_udp_socket_;
   std::unique_ptr<connections::UdpSocket> info_udp_socket_;
+  std::unique_ptr<connections::UdpSocket> difop2_udp_socket_;
   std::shared_ptr<const RobosenseSensorConfiguration> sensor_configuration_;
   std::function<void(std::vector<uint8_t> & buffer)>
     scan_reception_callback_; /**This function pointer is called when the scan is complete*/
   std::function<void(std::vector<uint8_t> & buffer)>
     info_reception_callback_; /**This function pointer is called when DIFOP packet is received*/
   std::shared_ptr<loggers::Logger> logger_;
+
+  /// @brief Start one UDP receiver for Robosense info/DIFOP packets.
+  /// @param socket Socket storage for the receiver
+  /// @param port UDP port to bind and filter
+  /// @param label Human readable stream label for logs
+  /// @return Resulting status
+  Status start_info_socket(
+    std::unique_ptr<connections::UdpSocket> & socket, uint16_t port, const std::string & label);
 
 public:
   /// @brief Constructor

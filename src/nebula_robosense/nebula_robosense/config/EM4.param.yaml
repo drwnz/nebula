@@ -4,6 +4,7 @@
     sensor_ip: 192.168.1.200
     data_port: 6699
     info_port: 7788
+    difop2_port: 7788
     packet_mtu_size: 1500
     launch_hw: true
     setup_sensor: true
