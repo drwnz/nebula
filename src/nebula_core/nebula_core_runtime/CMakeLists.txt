@@ -10,10 +10,13 @@ find_package(nlohmann_json REQUIRED)
 find_package(Boost REQUIRED COMPONENTS filesystem system)
 find_package(nebula_core_common REQUIRED)
 find_package(nebula_core_decoders REQUIRED)
+find_package(nebula_core_hw_interfaces REQUIRED)
 
 add_library(nebula_core_runtime SHARED
   src/sensor_registry.cpp
   src/packet_router.cpp
+  src/replay_session_runner.cpp
+  src/live_transport_graph.cpp
 )
 
 target_include_directories(
@@ -27,6 +30,7 @@ target_link_libraries(nebula_core_runtime PUBLIC
   Boost::system
   nebula_core_common::nebula_core_common
   nebula_core_decoders::nebula_core_decoders
+  nebula_core_hw_interfaces::nebula_core_hw_interfaces
   ${CMAKE_DL_LIBS}
 )
 
@@ -99,19 +103,30 @@ if(BUILD_TESTING)
   set_target_properties(test_missing_abi_version_plugin PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test_plugins")
 
+  add_library(test_live_transport_plugin SHARED test/live_transport_test_plugin.cpp)
+  target_link_libraries(test_live_transport_plugin PRIVATE ${PROJECT_NAME})
+  set_target_properties(test_live_transport_plugin PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test_plugins")
+
   nebula_add_test(test_sensor_registry test/test_sensor_registry.cpp)
   add_dependencies(test_sensor_registry test_abi_mismatch_plugin test_missing_abi_version_plugin)
   target_compile_definitions(test_sensor_registry PRIVATE
     NEBULA_RUNTIME_TEST_ABI_MISMATCH_PLUGIN="$<TARGET_FILE:test_abi_mismatch_plugin>"
     NEBULA_RUNTIME_TEST_MISSING_ABI_VERSION_PLUGIN="$<TARGET_FILE:test_missing_abi_version_plugin>")
 
+  nebula_add_test(test_sample_plugin_integration test/test_sample_plugin_integration.cpp)
   nebula_add_test(test_packet_router test/test_packet_router.cpp)
+  nebula_add_test(test_replay_session_runner test/test_replay_session_runner.cpp)
+  nebula_add_test(test_live_transport_graph test/test_live_transport_graph.cpp)
+  add_dependencies(test_live_transport_graph test_live_transport_plugin)
+  target_compile_definitions(test_live_transport_graph PRIVATE
+    NEBULA_RUNTIME_TEST_LIVE_TRANSPORT_PLUGIN="$<TARGET_FILE:test_live_transport_plugin>")
 endif()
 
 if(DEFINED ENV{AMENT_PREFIX_PATH})
     ament_export_include_directories(include)
     ament_export_targets(export_${PROJECT_NAME})
-    ament_export_dependencies(Boost nlohmann_json nebula_core_common nebula_core_decoders)
+    ament_export_dependencies(Boost nlohmann_json nebula_core_common nebula_core_decoders nebula_core_hw_interfaces)
     autoware_package()
     ament_package()
 endif()
