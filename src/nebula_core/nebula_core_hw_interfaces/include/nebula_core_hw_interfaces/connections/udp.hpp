@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <iostream>
 #include <optional>
 #include <string>
 #include <thread>
@@ -93,7 +94,7 @@ class UdpSocket
 
       bool counter_did_wrap = current_drop_counter < last;
       if (counter_did_wrap) {
-        return (UINT32_MAX - last) + current_drop_counter;
+        return (UINT32_MAX - last) + current_drop_counter + 1;
       }
 
       return current_drop_counter - last;
@@ -255,6 +256,8 @@ public:
     std::optional<uint64_t> timestamp_ns;
     uint64_t n_packets_dropped_since_last_receive{0};
     PerfCounters packet_perf_counters{};
+    std::string sender_ip;
+    uint16_t sender_port{0};
     bool truncated{};
   };
 
@@ -284,6 +287,12 @@ public:
   UdpSocket & unsubscribe()
   {
     running_ = false;
+    // Calling unsubscribe() from the receive thread is a self-join and is
+    // prohibited. Lifecycle calls (stop, configure, destruction) must be
+    // deferred to a thread that is not the receive thread.
+    assert(
+      receive_thread_.get_id() != std::this_thread::get_id() &&
+      "unsubscribe() must not be called from the receive thread itself");
     if (receive_thread_.joinable()) {
       receive_thread_.join();
     }
@@ -313,7 +322,10 @@ public:
   }
 
   UdpSocket(const UdpSocket &) = delete;
-  UdpSocket(UdpSocket && other) noexcept
+  // Not noexcept: unsubscribe() may throw from thread::join() and subscribe() may
+  // throw from std::thread construction. Marking noexcept would turn either into
+  // std::terminate.
+  UdpSocket(UdpSocket && other)
   : sock_fd_((other.unsubscribe(), std::move(other.sock_fd_))), config_(other.config_)
   {
     if (other.callback_) subscribe(std::move(other.callback_));
@@ -367,6 +379,8 @@ private:
 
         RxMetadata metadata;
         get_receive_metadata(msg_header.msg, metadata, drop_monitor);
+        metadata.sender_ip = sender_ip(msg_header.sender_addr);
+        metadata.sender_port = ntohs(msg_header.sender_addr.sin_port);
         metadata.truncated = untruncated_packet_length > config_.buffer_size;
 
         // Resize down to match received data so callback sees correct size
@@ -379,7 +393,16 @@ private:
         metadata.packet_perf_counters = current_packet_perf_counters;
         current_packet_perf_counters = {};
 
-        callback_(buffer, metadata);
+        // A user callback that throws would escape the std::thread function and
+        // terminate the process. Log and continue so a single bad packet does
+        // not take down the receiver.
+        try {
+          callback_(buffer, metadata);
+        } catch (const std::exception & e) {
+          std::cerr << "UdpSocket receiver: user callback threw: " << e.what() << std::endl;
+        } catch (...) {
+          std::cerr << "UdpSocket receiver: user callback threw a non-std::exception" << std::endl;
+        }
       }
     });
   }
@@ -408,10 +431,18 @@ private:
     }
   }
 
+  static std::string sender_ip(const sockaddr_in & sender_addr)
+  {
+    std::array<char, INET_ADDRSTRLEN> buffer{};
+    const char * result = inet_ntop(AF_INET, &sender_addr.sin_addr, buffer.data(), buffer.size());
+    return result ? std::string(result) : std::string{};
+  }
+
   bool is_accepted_sender(const sockaddr_in & sender_addr)
   {
     if (!config_.sender_filter) return true;
-    return sender_addr.sin_addr.s_addr == config_.sender_filter->ip.s_addr;
+    return sender_addr.sin_addr.s_addr == config_.sender_filter->ip.s_addr &&
+           ntohs(sender_addr.sin_port) == config_.sender_filter->port;
   }
 
   SockFd sock_fd_;

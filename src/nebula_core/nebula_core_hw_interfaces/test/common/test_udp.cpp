@@ -154,6 +154,8 @@ TEST(TestUdp, TestReceiving)
   ASSERT_EQ(recv_payload, payload);
   ASSERT_FALSE(metadata.truncated);
   ASSERT_EQ(metadata.n_packets_dropped_since_last_receive, 0);
+  ASSERT_EQ(metadata.sender_ip, g_localhost_ip);
+  ASSERT_NE(metadata.sender_port, 0);
 
   // TODO(mojomex): currently cannot test timestamping on loopback interface (no timestamp produced)
 }
