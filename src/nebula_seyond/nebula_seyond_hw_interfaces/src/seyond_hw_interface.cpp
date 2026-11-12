@@ -86,12 +86,7 @@ std::string SeyondHwInterface::build_udp_ports_ip_value(
   const SeyondConnectionConfiguration & config) const
 {
   std::ostringstream network_val;
-  network_val << config.udp_port << ',' << config.udp_message_port << ',' << config.udp_status_port
-              << ',' << config.host_ip;
-
-  if (uses_six_field_udp_ports_ip()) {
-    network_val << ',' << config.host_ip << ',' << config.sensor_ip;
-  }
+  network_val << config.udp_port << ',' << config.udp_message_port << ',' << config.udp_status_port;
 
   return network_val.str();
 }
