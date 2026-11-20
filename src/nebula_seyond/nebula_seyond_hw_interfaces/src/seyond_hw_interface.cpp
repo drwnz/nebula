@@ -64,8 +64,7 @@ SeyondHwInterface::SeyondHwInterface(const SeyondSensorConfiguration & config)
 
 bool SeyondHwInterface::requires_direct_start_command() const
 {
-  return sensor_config_.sensor_model == SeyondSensorModel::HUMMINGBIRD_D1 ||
-         sensor_config_.sensor_model == SeyondSensorModel::ROBIN_W ||
+  return sensor_config_.sensor_model == SeyondSensorModel::ROBIN_W ||
          sensor_config_.sensor_model == SeyondSensorModel::ROBIN_E1X ||
          sensor_config_.sensor_model == SeyondSensorModel::FALCON_K;
 }
