@@ -35,6 +35,7 @@ namespace
 constexpr double no_roi_value = 10000.0;
 constexpr size_t k_seyond_udp_mtu = 10000;
 constexpr size_t k_seyond_udp_socket_buffer_size = 4 * 1024 * 1024;
+constexpr size_t k_seyond_destination_ip_index = 3;
 
 std::optional<std::array<uint8_t, 4>> parse_ipv4_octets(const std::string & ip)
 {
@@ -64,8 +65,7 @@ SeyondHwInterface::SeyondHwInterface(const SeyondSensorConfiguration & config)
 
 bool SeyondHwInterface::requires_direct_start_command() const
 {
-  return sensor_config_.sensor_model == SeyondSensorModel::HUMMINGBIRD_D1 ||
-         sensor_config_.sensor_model == SeyondSensorModel::ROBIN_W ||
+  return sensor_config_.sensor_model == SeyondSensorModel::ROBIN_W ||
          sensor_config_.sensor_model == SeyondSensorModel::ROBIN_E1X ||
          sensor_config_.sensor_model == SeyondSensorModel::FALCON_K;
 }
@@ -86,12 +86,7 @@ std::string SeyondHwInterface::build_udp_ports_ip_value(
   const SeyondConnectionConfiguration & config) const
 {
   std::ostringstream network_val;
-  network_val << config.udp_port << ',' << config.udp_message_port << ',' << config.udp_status_port
-              << ',' << config.host_ip;
-
-  if (uses_six_field_udp_ports_ip()) {
-    network_val << ',' << config.host_ip << ',' << config.sensor_ip;
-  }
+  network_val << config.udp_port << ',' << config.udp_message_port << ',' << config.udp_status_port;
 
   return network_val.str();
 }
@@ -167,10 +162,38 @@ Status SeyondHwInterface::sensor_interface_start()
   }
 
   try {
+    // Query destination IP to the device and check if it is multicast
+    std::string response;
+    auto status = get_attribute("udp_ports_ip", response);
+
+    std::string destination_ip;
+    if (status == Status::OK) {
+      std::stringstream ss(response);
+      std::vector<std::string> response_elements;
+      std::string e;
+      while (std::getline(ss, e, ',')) {
+        response_elements.emplace_back(e);
+      }
+      if (response_elements.size() <= k_seyond_destination_ip_index) {
+        return Status::ERROR_1;
+      }
+      destination_ip = response_elements[k_seyond_destination_ip_index];
+    } else {
+      return Status::HTTP_CONNECTION_ERROR;
+    }
+
+    const auto octets = parse_ipv4_octets(destination_ip);
+    const bool is_multicast = octets && (*octets)[0] >= 224 && (*octets)[0] <= 239;
+
     std::string host_ip = sensor_config_.connection.host_ip;
     uint16_t port = sensor_config_.connection.udp_port;
     connections::UdpSocket::Builder builder{host_ip, port};
     builder.set_mtu(k_seyond_udp_mtu).set_socket_buffer_size(k_seyond_udp_socket_buffer_size);
+    if (is_multicast) {
+      builder.join_multicast_group(destination_ip)
+        .limit_to_sender(sensor_config_.connection.sensor_ip, 40050);
+    }
+
     udp_socket_.emplace(std::move(builder).bind());
   } catch (const std::exception &) {
     return Status::UDP_CONNECTION_ERROR;
